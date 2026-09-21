@@ -3,12 +3,12 @@ import time
 
 import torch
 
-from mygpt.data import CharTokenizer
+from mygpt.data import BPETokenizer
 from mygpt.model import GPT
 
 parser = argparse.ArgumentParser(description="Genera testo da un checkpoint di mygpt.")
 parser.add_argument("--ckpt", default="out/ckpt.pt")
-parser.add_argument("--vocab", default="data/vocab.json")
+parser.add_argument("--vocab", default="data/bpe.json")
 parser.add_argument("--prompt", default="\n", help="testo iniziale")
 parser.add_argument("--tokens", type=int, default=500, help="quanti token generare")
 parser.add_argument("--temperature", type=float, default=0.8)
@@ -26,7 +26,7 @@ if args.seed is not None:
 
 # weights_only=True: il checkpoint viene deserializzato senza eseguire codice
 ckpt = torch.load(args.ckpt, map_location=device, weights_only=True)
-tok = CharTokenizer.load(args.vocab)
+tok = BPETokenizer.load(args.vocab)
 
 # dropout non e' nel config: resta al default 0.0, che e' quello che vuoi in inferenza
 model = GPT(**ckpt["config"]).to(device)
@@ -35,10 +35,7 @@ model.eval()
 
 print(f"# {args.ckpt}: iter {ckpt['iter']}, val loss {ckpt['val_loss']:.4f}")
 
-ids = tok.encode(args.prompt)
-if tok.unk_id in ids:
-    unknown = sorted({c for c in args.prompt if c not in tok.stoi})
-    print(f"# attenzione: caratteri fuori vocabolario -> UNK: {unknown}")
+ids = tok.encode(args.prompt)  # byte-level: nessun prompt e' fuori vocabolario
 
 ctx = torch.tensor([ids] * args.samples, dtype=torch.long, device=device)
 

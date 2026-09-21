@@ -188,7 +188,7 @@ class GPT(nn.Module):
         self.block_size = block_size
 
         self.wte = Embedding(vocab_size, n_embd)  # token -> vector
-        self.wpe = Embedding(block_size, n_embd)  # position -> vector
+        # niente wpe: la posizione la mette RoPE dentro l'attention, ruotando q e k
         self.drop = Dropout(dropout)
         self.blocks = nn.ModuleList(
             [Block(n_embd, n_head, block_size, dropout) for _ in range(n_layer)]
@@ -208,15 +208,11 @@ class GPT(nn.Module):
         self, idx: torch.Tensor, targets: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         B, T = idx.shape
-        # da che posizione ripartono i token nuovi: quanti ce n'e' gia' in cache
-        cache = self.blocks[0].attn.cache
-        t0 = 0 if cache is None else min(cache[0].size(2), self.block_size - T)
-        assert t0 + T <= self.block_size, (
-            f"sequenza di {T} token a partire da {t0}, block_size è {self.block_size}"
+        assert T <= self.block_size, (
+            f"sequenza di {T} token, block_size è {self.block_size}"
         )
 
-        pos = torch.arange(t0, t0 + T, device=idx.device)  # (T,)
-        x = self.drop(self.wte(idx) + self.wpe(pos))  # (B, T, C) + (T, C) -> (B, T, C)
+        x = self.drop(self.wte(idx))  # (B, T) -> (B, T, C)
         for block in self.blocks:
             x = block(x)
         x = self.ln_f(x)
@@ -233,6 +229,7 @@ class GPT(nn.Module):
         for block in self.blocks:
             block.attn.use_cache = enabled
             block.attn.cache = None
+            block.attn.pos = 0
 
     @torch.no_grad()
     def generate(
@@ -248,7 +245,7 @@ class GPT(nn.Module):
             # con la cache: il primo giro macina tutto il prompt (prefill), poi un
             # token alla volta. Senza: si rifa' tutta la finestra ogni volta.
             idx_cond = (
-                (idx if i == 0 else idx[:, -1:])
+                (idx[:, -self.block_size :] if i == 0 else idx[:, -1:])
                 if use_cache
                 else idx[:, -self.block_size :]  # il modello non vede oltre
             )
@@ -264,6 +261,25 @@ class GPT(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1)
         self.set_cache(False)  # il modello torna stateless, la memoria si libera
         return idx
+
+
+def rope_tables(
+    head_size: int, t0: int, T: int, device: torch.device, theta: float = 10000.0
+) -> tuple[torch.Tensor, torch.Tensor]:
+    # la coppia i ruota di pos * theta^(-2i/hs): le prime coppie girano veloci
+    # (distanze corte), le ultime lentissime (contesto lungo). Nessun parametro.
+    inv_freq = theta ** (-torch.arange(0, head_size, 2, device=device) / head_size)
+    ang = torch.arange(t0, t0 + T, device=device)[:, None] * inv_freq[None, :]
+    return ang.cos(), ang.sin()  # (T, hs/2)
+
+
+def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+    # x: (B, nh, T, hs). Una rotazione 2D per ogni coppia (i, i + hs/2), di un
+    # angolo proporzionale alla posizione. Cosi' q @ k.T dipende solo dalla
+    # DIFFERENZA delle due posizioni: e' questo che rende la cache traslabile.
+    x1, x2 = x.chunk(2, dim=-1)  # (B, nh, T, hs/2)
+    cos, sin = cos.to(x.dtype), sin.to(x.dtype)
+    return torch.cat((x1 * cos - x2 * sin, x1 * sin + x2 * cos), dim=-1)
 
 
 class CausalSelfAttention(nn.Module):
@@ -285,6 +301,7 @@ class CausalSelfAttention(nn.Module):
         self.block_size = block_size
         self.use_cache = False
         self.cache: tuple[torch.Tensor, torch.Tensor] | None = None
+        self.pos = 0  # token gia' visti: NON e' la lunghezza della cache, che si tronca
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, C = x.shape
@@ -295,6 +312,15 @@ class CausalSelfAttention(nn.Module):
         q = q.view(B, T, self.n_head, hs).transpose(1, 2)
         k = k.view(B, T, self.n_head, hs).transpose(1, 2)
         v = v.view(B, T, self.n_head, hs).transpose(1, 2)
+
+        # posizione assoluta da cui ripartono questi token. Deve continuare a
+        # crescere anche quando la cache si tronca: se la bloccassi a block_size,
+        # le q resterebbero indietro rispetto alle k gia' in cache e le distanze
+        # relative diventerebbero negative.
+        t0 = self.pos if self.use_cache else 0
+        self.pos += T
+        cos, sin = rope_tables(hs, t0, T, x.device)
+        q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)  # v NON si ruota
 
         if self.use_cache:
             if self.cache is not None:  # i k,v del passato sono gia' calcolati
@@ -424,8 +450,7 @@ if __name__ == "__main__":
     n = sum(p.numel() for p in gpt.parameters())
     expected = (
         tok.vocab_size * n_embd  # wte (lm_head e' legata, non conta due volte)
-        + bs * n_embd  # wpe
-        + n_layer * (12 * n_embd**2 + 10 * n_embd)  # blocchi
+        + n_layer * (12 * n_embd**2 + 10 * n_embd)  # blocchi (RoPE non ha parametri)
         + 2 * n_embd  # ln_f
     )
     assert n == expected, (n, expected)
@@ -442,6 +467,41 @@ if __name__ == "__main__":
     ctx = torch.tensor([tok.encode("\n")], dtype=torch.long, device=device)
     assert gpt.generate(ctx, max_new_tokens=5, top_k=10).shape == (1, 6)
     print("GPT: generate ok")
+
+    # RoPE: q . k dipende SOLO dalla distanza, non dalla posizione assoluta
+    qv, kv = (
+        torch.randn(1, 1, 1, 64, device=device),
+        torch.randn(1, 1, 1, 64, device=device),
+    )
+
+    def rope_dot(m: int, n: int) -> torch.Tensor:
+        return (
+            apply_rope(qv, *rope_tables(64, m, 1, qv.device))
+            * apply_rope(kv, *rope_tables(64, n, 1, kv.device))
+        ).sum()
+
+    assert torch.allclose(rope_dot(5, 3), rope_dot(105, 103), atol=1e-4)
+    assert not torch.allclose(rope_dot(5, 3), rope_dot(5, 4), atol=1e-4)
+    print("RoPE: invariante per traslazione ok")
+
+    # KV cache oltre block_size: con RoPE la finestra tagliata deve dare ESATTAMENTE
+    # i logit del path senza cache, che la finestra la ricalcola da zero ogni volta
+    small = GPT(tok.vocab_size, 64, 4, 2, 16).to(device)
+    small.eval()
+    seq = torch.randint(tok.vocab_size, (1, 1), device=device)
+    plain = []
+    for _ in range(40):  # senza cache: riparte dagli ultimi 16 token ogni volta
+        lg, _ = small(seq[:, -16:])
+        plain.append(lg[:, -1])
+        seq = torch.cat((seq, lg[:, -1].argmax(-1, keepdim=True)), dim=1)
+    small.set_cache(True)
+    cached = [small(seq[:, :1])[0][:, -1]]
+    for t in range(1, 40):
+        cached.append(small(seq[:, t : t + 1])[0][:, -1])
+    small.set_cache(False)
+    err = max((a - b).abs().max().item() for a, b in zip(plain, cached))
+    assert err < 1e-3, err  # 40 token su una finestra di 16: scorre 24 volte
+    print(f"KV cache: finestra scorrevole esatta (err max {err:.1e})")
 
     # KV cache: prefill + decode danno gli stessi logit del forward completo
     gpt.eval()
@@ -467,19 +527,9 @@ if __name__ == "__main__":
     assert abs(out.mean().item() - 1.0) < 0.02  # media preservata
     print("Dropout: identita' in eval, ~20% azzerato in train, media 1.0 ok")
 
-    # CausalSelfAttention: identica alla naive a pesi uguali, stessi parametri
-    mha = MultiHeadAttention(C, 4, T).to(device)
+    # CausalSelfAttention: stessi parametri della naive (4C^2 + C), ma da RoPE in poi NON e' piu' la stessa funzione
     csa = CausalSelfAttention(C, 4, T).to(device)
-    hs = C // 4
-    with torch.no_grad():
-        # c_attn impila [q; k; v] per righe; la testa i occupa hs*i : hs*(i+1)
-        for attr, off in (("query", 0), ("key", C), ("value", 2 * C)):
-            for i, h in enumerate(mha.heads):
-                csa.c_attn.weight[off + i * hs : off + (i + 1) * hs] = getattr(
-                    h, attr
-                ).weight
-        csa.proj.weight.copy_(mha.proj.weight)
-        csa.proj.bias.copy_(mha.proj.bias)
-    mha.eval(), csa.eval()
-    assert torch.allclose(mha(xh), csa(xh), atol=1e-5)
+    csa.eval()
+    assert csa(xh).shape == (B, T, C)
+    assert torch.allclose(csa(xh)[:, : T // 2], csa(xh2)[:, : T // 2], atol=1e-6)
     assert sum(p.numel() for p in csa.parameters()) == 4 * C * C + C

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import torch
 
-from mygpt.data import CharTokenizer, get_batch, load_data
+from mygpt.data import BPETokenizer, get_batch, load_data
 from mygpt.model import GPT
 
 # config
@@ -13,7 +13,7 @@ block_size = 256
 dropout = 0.2
 
 batch_size = 64
-max_iters = 2000
+max_iters = 600
 learning_rate = 1e-3
 min_lr = 1e-4
 warmup_iters = 100
@@ -21,7 +21,7 @@ weight_decay = 0.1
 betas = (0.9, 0.99)
 grad_clip = 1.0
 
-eval_interval = 250
+eval_interval = 100
 eval_iters = 200
 compile_model = True
 out_dir = Path("out")
@@ -37,8 +37,12 @@ def sync() -> None:
 
 
 # dati e modello
-tok = CharTokenizer.load("data/vocab.json")
+tok = BPETokenizer.load("data/bpe.json")
 train_data, val_data = load_data("data/input.txt", tok, device)
+# bit/byte: l'unica metrica confrontabile tra tokenizzatori diversi, perche'
+# normalizza la loss per quanto testo vero sta dentro un token
+bytes_per_token = len(tok.decode(val_data.tolist()).encode()) / len(val_data)
+print(f"vocab {tok.vocab_size} | {bytes_per_token:.2f} byte/token sulla val")
 
 raw_model = GPT(tok.vocab_size, n_embd, n_head, n_layer, block_size, dropout).to(device)
 print(f"{sum(p.numel() for p in raw_model.parameters()):,} parametri")
@@ -107,9 +111,10 @@ for it in range(max_iters + 1):
         tok_s = batch_size * block_size * n_it / elapsed if n_it else 0.0
 
         losses = estimate_loss()
+        bpb = losses["val"] / (math.log(2) * bytes_per_token)
         print(
             f"step {it:5d} | train {losses['train']:.4f} | val {losses['val']:.4f} "
-            f"| lr {lr:.2e} | {ms:6.1f} ms/it | {tok_s / 1e3:5.0f}k tok/s"
+            f"| bpb {bpb:.3f} | lr {lr:.2e} | {ms:6.1f} ms/it | {tok_s / 1e3:5.0f}k tok/s"
         )
 
         if losses["val"] < best_val and it > 0:

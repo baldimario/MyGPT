@@ -1,4 +1,6 @@
 import json
+import re
+from collections import Counter
 from pathlib import Path
 import torch
 
@@ -35,9 +37,93 @@ class CharTokenizer:
         return cls(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
+def merge(ids: list[int], pair: tuple[int, int], new_id: int) -> list[int]:
+    # sostituisce ogni occorrenza di pair con new_id, da sinistra e senza overlap
+    out, i = [], 0
+    while i < len(ids):
+        if i + 1 < len(ids) and (ids[i], ids[i + 1]) == pair:
+            out.append(new_id)
+            i += 2
+        else:
+            out.append(ids[i])
+            i += 1
+    return out
+
+
+class BPETokenizer:
+    # BPE byte-level, il vocabolario parte dai 256 byte, quindi NON esiste l'UNK token, qualunque testo e' rappresentabile. La pre-tokenizzazione spezza il testo prima di fondere, cosi' nessun token scavalca un confine di parola, lo spazio resta attaccato alla parola che segue, come in GPT-2
+    PAT = re.compile(r" ?\w+| ?[^\w\s]+|\s+")
+
+    def __init__(self, merges: list[tuple[int, int]]) -> None:
+        self.merges = [tuple(pair) for pair in merges]
+        # il rank e' l'ordine di creazione: serve a rifondere nello stesso ordine
+        self.ranks = {pair: 256 + i for i, pair in enumerate(self.merges)}
+        self.itob = [bytes([i]) for i in range(256)]  # id -> byte rappresentati
+        for a, b in self.merges:
+            self.itob.append(self.itob[a] + self.itob[b])
+        self._cache: dict[str, list[int]] = {}
+
+    @property
+    def vocab_size(self) -> int:
+        return len(self.itob)
+
+    @classmethod
+    def from_text(cls, text: str, vocab_size: int = 1024) -> "BPETokenizer":
+        assert vocab_size >= 256, "i 256 byte sono il punto di partenza obbligato"
+        # si allena sui chunk UNICI pesati per frequenza: 15k invece di 295k
+        freqs = Counter(cls.PAT.findall(text))
+        seqs = {chunk: list(chunk.encode()) for chunk in freqs}
+
+        merges = []
+        for new_id in range(256, vocab_size):
+            pairs = Counter()
+            for chunk, ids in seqs.items():
+                for pair in zip(ids, ids[1:]):
+                    pairs[pair] += freqs[chunk]
+            if not pairs:
+                break  # niente piu' da fondere: il corpus e' tutto token singoli
+            best = max(pairs, key=pairs.__getitem__)
+            merges.append(best)
+            # ricontiamo tutte le coppie a ogni fusione. 10s una tantum
+            # su tinyshakespeare; con un indice coppia -> chunk si passerebbe a
+            # aggiornamenti locali, da fare solo se il corpus cresce di un ordine
+            for chunk, ids in seqs.items():
+                if len(ids) > 1:
+                    seqs[chunk] = merge(ids, best, new_id)
+        return cls(merges)
+
+    def _encode_chunk(self, chunk: str) -> list[int]:
+        if chunk not in self._cache:
+            ids = list(chunk.encode())
+            while len(ids) > 1:
+                # si fonde sempre la coppia col rank piu' basso, cioe' quella nata
+                # prima in training: ricostruisce la stessa storia di fusioni
+                pair = min(zip(ids, ids[1:]), key=lambda p: self.ranks.get(p, 1 << 30))
+                if pair not in self.ranks:
+                    break  # nessuna coppia rimasta e' nel vocabolario
+                ids = merge(ids, pair, self.ranks[pair])
+            self._cache[chunk] = ids
+        return self._cache[chunk]
+
+    def encode(self, s: str) -> list[int]:
+        return [i for chunk in self.PAT.findall(s) for i in self._encode_chunk(chunk)]
+
+    def decode(self, ids: list[int]) -> str:
+        # errors="replace": generando, il modello puo' fermarsi a meta' di un
+        # carattere multi-byte. Meglio un tofu che un'eccezione.
+        return b"".join(self.itob[i] for i in ids).decode("utf-8", errors="replace")
+
+    def save(self, path: str | Path) -> None:
+        Path(path).write_text(json.dumps(self.merges))
+
+    @classmethod
+    def load(cls, path: str | Path) -> "BPETokenizer":
+        return cls(json.loads(Path(path).read_text()))
+
+
 def load_data(
     path: str | Path,
-    tokenizer: CharTokenizer,
+    tokenizer: "CharTokenizer | BPETokenizer",
     device: str = "cuda",
     val_frac: float = 0.1,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -79,6 +165,31 @@ if __name__ == "__main__":
     train, val = load_data("data/input.txt", tok, device)
     print(
         f"train = {len(train):,} token | val = {len(val):,} token | device = {train.device}"
+    )
+
+    # BPE: si allena una volta e si salva, 10s
+    bpe_path = Path("data/bpe.json")
+    if bpe_path.exists():
+        bpe = BPETokenizer.load(bpe_path)
+    else:
+        bpe = BPETokenizer.from_text(text, vocab_size=1024)
+        bpe.save(bpe_path)
+
+    assert bpe.vocab_size == 1024
+    assert bpe.decode(bpe.encode(text)) == text  # bigezione sul corpus
+    assert bpe.decode(bpe.encode("日本語")) == "日本語"  # byte-level: nessun UNK
+    assert BPETokenizer.load(bpe_path).merges == bpe.merges
+
+    ids = bpe.encode(text)
+    print(
+        f"BPE: vocab {bpe.vocab_size} | {len(ids):,} token | "
+        f"{len(text.encode()) / len(ids):.2f} byte/token | "
+        f"{len(text.encode()) / len(ids) / 1:.2f}x piu' corto del char-level"
+    )
+    print("  token piu' lunghi:", sorted(bpe.itob, key=len)[-6:])
+    print(
+        "  'To be, or not to be' ->",
+        [bpe.itob[i] for i in bpe.encode("To be, or not to be")],
     )
 
     torch.manual_seed(1337)
