@@ -284,3 +284,26 @@ L'opera è
 ```
 
 la temperatura 0.6 piuù penalità, la temperatura bassa tiene la sintassi in riga, la penalità impedisce che quella stessa sicurezza diventi un loop, da soli uno da testo incantato e l'altra testo sconclusionato
+
+Questo è un LLM modern oora, quello che può farci guadagnare qualche punto percentuale è
+- RMSNorm invece di LayerNorm, niente media da sottrarre, nient ebias, un po' più veloce e funziona uguale
+- SwiGLU invece di GELU nella MLP, una porta moltiplicativa, tre matrici invece di due
+- GQA (grouped-query attention), più head per le query che per le chiavi, serve a far stae la KV cache in memoria su contesti lughi, la cache ora non cresce con il contesto
+
+La scala non è una manopola, 255k token/s su un modello da13.8M sono 21 TOPS/s effettivi, un modello da 7B addestrato bene vuole 140 milairdi di token cioè 6* 7e9 * 1.4e11 = 5.9e21 FLOP, sulla mia gpu, una 5060 Ti ci vorrebbero 9 anni senza mai spegnerla
+
+il modello non entra in GPu col dataset, serve parallelism con ZeR0/FSDP per spezzare in strati e ottimizzare i gradienti, tensor e pipeline parallelism e tutto ciò è codice di sistema/train non di modello
+
+l'addestramento diventa instabile, a 13.8M la loss scende liscia, a miliarid di parametri arrivano degli spike, la lossa salta su e non torna giù, per questo nasce la QK-normaliztion, la z-loss, μP per trasferire gli iperparametri fra scale, sono rimedi a cose che ora non possiamo neanche osservare
+
+Un run dura settimane, quindi servono checkpoint, restart e monitoraggio di spegnimenti macchian ecc
+
+i dati diventano il lavoro principale, abbiamo 145M token, Llama 3 ne ha visto 15000 miliardi, più di 100k volte tanto, a quella scala il tempo si spende in deduplicaizone, filtri di qualità, decontaminazione dai benchmark, è la parte noiosa
+
+avere qualcosa che risponde bene serve il post-training che è un argomento separato
+
+- SFT, fine-tuning su decine di migliaia di conversazioni scritte da umani che insegna il formato "domanda -> risposta utile"
+- Apprendimento dalle preferenze, RLHF, FPO e parenti, si raccolgono giudizi umani su coppie di risposte, si addestra un modello di reward o si ottimizza direttamente la preferenza, quin nascono l'utilità, il tono, il rifiuto di richieste dannose
+- Poi uso di strumenti come contesto lungo, valutazione seria, inferenza in produzione che è un altro mondo ancora, perché dovremmo trattare batching continuo, quantizzazione, paged attention, decodifica speculativa
+
+ma ci siamo riferiti a GPT-3 che era un modello del 2020 ed era un modello base
