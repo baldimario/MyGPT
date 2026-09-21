@@ -2,6 +2,8 @@ import json
 import re
 from collections import Counter
 from pathlib import Path
+
+import numpy as np
 import torch
 
 
@@ -68,10 +70,17 @@ class BPETokenizer:
         return len(self.itob)
 
     @classmethod
-    def from_text(cls, text: str, vocab_size: int = 1024) -> "BPETokenizer":
+    def from_text(
+        cls, text: str, vocab_size: int = 1024, min_freq: int = 1
+    ) -> "BPETokenizer":
         assert vocab_size >= 256, "i 256 byte sono il punto di partenza obbligato"
         # si allena sui chunk UNICI pesati per frequenza: 15k invece di 295k
         freqs = Counter(cls.PAT.findall(text))
+        if min_freq > 1:
+            # i chunk rari costano quanto gli altri a ogni giro ma pesano
+            # pochissimo sul conteggio delle coppie. Su it.wikipedia, min_freq=5
+            # butta il 75% dei chunk unici e conserva il 96% delle occorrenze.
+            freqs = Counter({c: n for c, n in freqs.items() if n >= min_freq})
         seqs = {chunk: list(chunk.encode()) for chunk in freqs}
 
         merges = []
@@ -121,14 +130,42 @@ class BPETokenizer:
         return cls(json.loads(Path(path).read_text()))
 
 
+def encode_to_bin(
+    tokenizer: BPETokenizer,
+    txt_path: str | Path,
+    bin_path: str | Path,
+    chunk_mb: int = 8,
+) -> int:
+    # codifica a pezzi e scrive uint16. Su mezzo giga di testo la lista Python di
+    # ~130M interi costerebbe ~5 GB di RAM; su disco sono 260 MB. Va rigenerato
+    # ogni volta che cambia il tokenizer: gli id non vogliono piu' dire lo stesso.
+    assert tokenizer.vocab_size <= 65536, "uint16 non basta per questo vocabolario"
+    n = 0
+    with open(txt_path, encoding="utf-8") as src, open(bin_path, "wb") as dst:
+        while block := src.read(chunk_mb * 1024**2):
+            block += src.readline()  # non spezzare una riga a meta'
+            ids = np.array(tokenizer.encode(block), dtype=np.uint16)
+            ids.tofile(dst)
+            n += len(ids)
+    return n
+
+
 def load_data(
     path: str | Path,
     tokenizer: "CharTokenizer | BPETokenizer",
     device: str = "cuda",
     val_frac: float = 0.1,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    text = Path(path).read_text(encoding="utf-8")
+    path = Path(path)
+    if path.suffix == ".bin":  # gia' codificato da encode_to_bin
+        ids = np.fromfile(path, dtype=np.uint16).astype(np.int64)
+        return _split(torch.from_numpy(ids).to(device), val_frac)
+    text = path.read_text(encoding="utf-8")
     data = torch.tensor(tokenizer.encode(text), dtype=torch.long, device=device)
+    return _split(data, val_frac)
+
+
+def _split(data: torch.Tensor, val_frac: float) -> tuple[torch.Tensor, torch.Tensor]:
     n = int(len(data) * (1 - val_frac))
     return data[:n], data[n:]
 

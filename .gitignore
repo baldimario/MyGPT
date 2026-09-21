@@ -12,3 +12,6 @@ wheels/
 store/
 out/*.pt
 data/input.txt
+data/input-it.txt
+data/it-wiki-00.parquet
+data/input-it.bin

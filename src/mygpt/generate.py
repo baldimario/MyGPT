@@ -8,11 +8,13 @@ from mygpt.model import GPT
 
 parser = argparse.ArgumentParser(description="Genera testo da un checkpoint di mygpt.")
 parser.add_argument("--ckpt", default="out/ckpt.pt")
-parser.add_argument("--vocab", default="data/bpe.json")
+parser.add_argument("--vocab", default="data/bpe-it.json")
 parser.add_argument("--prompt", default="\n", help="testo iniziale")
 parser.add_argument("--tokens", type=int, default=500, help="quanti token generare")
 parser.add_argument("--temperature", type=float, default=0.8)
-parser.add_argument("--top-k", type=int, default=40)
+parser.add_argument("--top-k", type=int, default=40, help="0 per disattivarlo")
+parser.add_argument("--top-p", type=float, default=None)
+parser.add_argument("--repetition-penalty", type=float, default=1.15)  # misurato
 parser.add_argument("--samples", type=int, default=1)
 parser.add_argument("--no-cache", action="store_true", help="disattiva la KV cache")
 parser.add_argument("--seed", type=int, default=None)
@@ -46,7 +48,9 @@ out = model.generate(
     ctx,
     args.tokens,
     temperature=args.temperature,
-    top_k=args.top_k,
+    top_k=args.top_k or None,  # 0 -> disattivato
+    top_p=args.top_p,
+    repetition_penalty=args.repetition_penalty,
     use_cache=not args.no_cache,
 )
 if device == "cuda":
@@ -54,6 +58,10 @@ if device == "cuda":
 dt = time.perf_counter() - t0
 
 cache = "no cache" if args.no_cache else "kv cache"
+print(
+    f"# temp {args.temperature} | top-k {args.top_k or None} | top-p {args.top_p}"
+    f" | rep {args.repetition_penalty}"
+)
 n = args.tokens * args.samples
 print(f"# {n} token in {dt:.2f}s = {n / dt:.0f} tok/s ({cache}, batch {args.samples})")
 

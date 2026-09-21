@@ -238,6 +238,8 @@ class GPT(nn.Module):
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: int | None = None,
+        top_p: float | None = None,
+        repetition_penalty: float = 1.0,
         use_cache: bool = True,
     ) -> torch.Tensor:
         self.set_cache(use_cache)
@@ -250,11 +252,41 @@ class GPT(nn.Module):
                 else idx[:, -self.block_size :]  # il modello non vede oltre
             )
             logits, _ = self(idx_cond)
-            logits = logits[:, -1, :] / temperature  # (B, V)
+            logits = logits[:, -1, :]  # (B, V)
 
-            if top_k is not None:
+            if repetition_penalty != 1.0:
+                # CTRL (Keskar et al. 2019): si penalizzano i token gia' usciti.
+                # Divisione se il logit e' positivo, moltiplicazione se negativo,
+                # cosi' la penalita' abbassa la probabilita' in tutti e due i casi.
+                seen = torch.zeros_like(logits, dtype=torch.bool)
+                seen.scatter_(1, idx, True)
+                logits = torch.where(
+                    seen,
+                    torch.where(
+                        logits > 0,
+                        logits / repetition_penalty,
+                        logits * repetition_penalty,
+                    ),
+                    logits,
+                )
+
+            logits = logits / temperature
+
+            if top_k is not None:  # taglia a un numero FISSO di candidati
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float("inf")
+
+            if top_p is not None:
+                # nucleus (Holtzman et al. 2019): tiene i token piu' probabili
+                # finche' la loro massa non copre top_p. La coda tagliata cambia
+                # taglia a ogni passo, ed e' esattamente il punto: dove il modello
+                # e' sicuro restano pochi candidati, dove e' incerto ne restano molti
+                srt, order = F.softmax(logits, dim=-1).sort(dim=-1, descending=True)
+                # cum - srt e' la massa PRIMA di questo token: cosi' il primo
+                # candidato sopravvive sempre, anche se da solo supera top_p
+                drop_srt = (srt.cumsum(-1) - srt) > top_p
+                drop = torch.zeros_like(drop_srt).scatter(1, order, drop_srt)
+                logits = logits.masked_fill(drop, -float("inf"))
 
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
@@ -317,8 +349,14 @@ class CausalSelfAttention(nn.Module):
         # crescere anche quando la cache si tronca: se la bloccassi a block_size,
         # le q resterebbero indietro rispetto alle k gia' in cache e le distanze
         # relative diventerebbero negative.
-        t0 = self.pos if self.use_cache else 0
-        self.pos += T
+        # pos si muove SOLO in decode: in training e' costante, e torch.compile
+        # tratta gli interi di un nn.Module come statici -> ogni valore nuovo era
+        # una ricompilazione, fino a sbattere contro recompile_limit
+        if self.use_cache:
+            t0 = self.pos
+            self.pos += T
+        else:
+            t0 = 0
         cos, sin = rope_tables(hs, t0, T, x.device)
         q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)  # v NON si ruota
 
@@ -467,6 +505,22 @@ if __name__ == "__main__":
     ctx = torch.tensor([tok.encode("\n")], dtype=torch.long, device=device)
     assert gpt.generate(ctx, max_new_tokens=5, top_k=10).shape == (1, 6)
     print("GPT: generate ok")
+
+    # top-p: con p minuscolo sopravvive solo il token piu' probabile, quindi deve
+    # dare esattamente lo stesso testo di top_k=1. Se lo shift `cum - srt` fosse
+    # sbagliato taglierebbe anche il primo e multinomial esploderebbe su tutti -inf
+    ctx_p = torch.tensor([tok.encode("\n")], dtype=torch.long, device=device)
+    torch.manual_seed(0)
+    greedy = gpt.generate(ctx_p, 20, top_k=1)
+    torch.manual_seed(0)
+    nucleus = gpt.generate(ctx_p, 20, top_k=None, top_p=1e-6)
+    assert torch.equal(greedy, nucleus), (greedy, nucleus)
+
+    # repetition_penalty enorme: nessun token puo' uscire due volte
+    torch.manual_seed(0)
+    rep = gpt.generate(ctx_p, 20, top_k=1, repetition_penalty=1e6)[0].tolist()
+    assert len(set(rep)) == len(rep), rep
+    print("sampling: top-p e repetition_penalty ok")
 
     # RoPE: q . k dipende SOLO dalla distanza, non dalla posizione assoluta
     qv, kv = (

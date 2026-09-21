@@ -10,10 +10,10 @@ from mygpt.model import GPT
 # config
 n_embd, n_head, n_layer = 384, 6, 6
 block_size = 256
-dropout = 0.2
+dropout = 0.0  # con <1 epoca non c'e' niente da memorizzare: sarebbe solo rumore
 
 batch_size = 64
-max_iters = 600
+max_iters = 20000  # ~2.3 epoche su 145M token
 learning_rate = 1e-3
 min_lr = 1e-4
 warmup_iters = 100
@@ -21,8 +21,8 @@ weight_decay = 0.1
 betas = (0.9, 0.99)
 grad_clip = 1.0
 
-eval_interval = 100
-eval_iters = 200
+eval_interval = 500
+eval_iters = 100  # 13M token di val: 100 batch bastano
 compile_model = True
 out_dir = Path("out")
 
@@ -37,11 +37,12 @@ def sync() -> None:
 
 
 # dati e modello
-tok = BPETokenizer.load("data/bpe.json")
-train_data, val_data = load_data("data/input.txt", tok, device)
+tok = BPETokenizer.load("data/bpe-it.json")
+train_data, val_data = load_data("data/input-it.bin", tok, device)
 # bit/byte: l'unica metrica confrontabile tra tokenizzatori diversi, perche'
 # normalizza la loss per quanto testo vero sta dentro un token
-bytes_per_token = len(tok.decode(val_data.tolist()).encode()) / len(val_data)
+_probe = val_data[:200_000].tolist()
+bytes_per_token = len(tok.decode(_probe).encode()) / len(_probe)
 print(f"vocab {tok.vocab_size} | {bytes_per_token:.2f} byte/token sulla val")
 
 raw_model = GPT(tok.vocab_size, n_embd, n_head, n_layer, block_size, dropout).to(device)
