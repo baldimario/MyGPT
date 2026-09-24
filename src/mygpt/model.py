@@ -143,6 +143,21 @@ class LayerNorm(nn.Module):
         return self.weight * xhat + self.bias
 
 
+class RMSNorm(nn.Module):
+    # LayerNorm senza centratura: divide per la radice della media dei quadrati, niente media, niente bias (Zhang & Sennrich 2019)
+
+    def __init__(self, ndim: int, eps: float = 1e-5) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(ndim))  # gamma, unico parametro
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # la somma dei quadrati in bf16 perde cifre: si calcola in fp32 e si torna al dtype d'ingresso
+        xf = x.float()
+        rms_inv = torch.rsqrt(xf.pow(2).mean(dim=-1, keepdim=True) + self.eps)  # (..., 1)
+        return self.weight * (xf * rms_inv).type_as(x)
+
+
 class MLP(nn.Module):
     # espande 4x, non linearità, ricomprime, nessuna comunicazione tra token
     def __init__(self, n_embd: int, dropout: float = 0.0) -> None:
@@ -155,18 +170,81 @@ class MLP(nn.Module):
         return self.dropout(self.proj(F.gelu(self.fc(x))))
 
 
+class SwiGLU(nn.Module):
+    # MLP con porta moltiplicativa (Shazeer 2020): proj(silu(gate(x)) * up(x)), tre matrici invece di due, niente bias come LLaMA
+    # hidden = 8/3 C invece di 4C: tre matrici C x hidden costano come le due 4C di prima (8C^2)
+    def __init__(self, n_embd: int, dropout: float = 0.0, multiple_of: int = 64) -> None:
+        super().__init__()
+        # arrotondato a un multiplo di 64, i tensor core lavorano a tile
+        self.hidden = multiple_of * math.ceil(8 * n_embd / 3 / multiple_of)
+        self.fc = Linear(n_embd, 2 * self.hidden, bias=False)  # gate e up in un matmul solo, come c_attn
+        self.proj = Linear(self.hidden, n_embd, bias=False)
+        self.dropout = Dropout(dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        gate, up = self.fc(x).chunk(2, dim=-1)  # (..., hidden) ciascuno
+        return self.dropout(self.proj(F.silu(gate) * up))
+
+
+class MoE(nn.Module):
+    # Mixture of Experts: n_expert SwiGLU indipendenti, un router sceglie i top_k per ogni token
+    # parametri x n_expert, calcolo per token x top_k (Shazeer 2017, Switch 2021, Mixtral 2024)
+    def __init__(
+        self, n_embd: int, n_expert: int, top_k: int, dropout: float = 0.0
+    ) -> None:
+        super().__init__()
+        assert 1 <= top_k <= n_expert
+        self.n_expert, self.top_k = n_expert, top_k
+        self.router = Linear(n_embd, n_expert, bias=False)
+        self.experts = nn.ModuleList(
+            [SwiGLU(n_embd, dropout) for _ in range(n_expert)]
+        )
+        self.aux_loss = torch.zeros(())  # load balancing, lo somma GPT.forward
+        self.load = torch.zeros(n_expert)  # frazione di token per esperto, solo per i log
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, T, C = x.shape
+        x = x.reshape(B * T, C)  # il routing e' per token: B e T non contano piu'
+        probs = F.softmax(self.router(x), dim=-1, dtype=torch.float32)  # (N, E)
+        w, idx = probs.topk(self.top_k, dim=-1)  # (N, k) pesi e indici degli esperti scelti
+        w = (w / w.sum(dim=-1, keepdim=True)).type_as(x)  # rinormalizzati sui k scelti
+
+        # ponytail: un ciclo sugli esperti con gather/scatter, niente grouped GEMM, shape dinamiche per compile
+        out = torch.zeros_like(x)
+        for e, expert in enumerate(self.experts):
+            tok, slot = (idx == e).nonzero(as_tuple=True)  # quali token hanno scelto e, e in quale dei k posti
+            out.index_add_(0, tok, expert(x[tok]) * w[tok, slot, None])
+
+        # Switch Transformer: E * sum_e f_e * P_e, minima (=1) quando il carico e' uniforme
+        # f_e = quota di assegnazioni andate a e (conteggio, non derivabile), P_e = prob media (derivabile)
+        f = F.one_hot(idx, self.n_expert).float().mean(dim=(0, 1))  # (E,), somma 1
+        P = probs.mean(dim=0)  # (E,), somma 1
+        self.aux_loss = self.n_expert * (f * P).sum()
+        self.load = f.detach()
+        return out.reshape(B, T, C)
+
+
 class Block(nn.Module):
     # un blocco transformer, comunicazione e computazione pre-ln
 
     def __init__(
-        self, n_embd: int, n_head: int, block_size: int, dropout: float = 0.0
+        self,
+        n_embd: int,
+        n_head: int,
+        block_size: int,
+        dropout: float = 0.0,
+        n_expert: int = 0,
+        top_k: int = 2,
     ) -> None:
         super().__init__()
-        self.ln1 = LayerNorm(n_embd)
+        self.ln1 = RMSNorm(n_embd)
         # self.attn = MultiHeadAttention(n_embd, n_head, block_size, dropout)
         self.attn = CausalSelfAttention(n_embd, n_head, block_size, dropout)
-        self.ln2 = LayerNorm(n_embd)
-        self.mlp = MLP(n_embd, dropout)
+        self.ln2 = RMSNorm(n_embd)
+        # n_expert=0: MLP densa, altrimenti MoE con lo stesso SwiGLU come esperto
+        self.mlp = (
+            MoE(n_embd, n_expert, top_k, dropout) if n_expert else SwiGLU(n_embd, dropout)
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.attn(self.ln1(x))  # i token si parlano
@@ -183,17 +261,24 @@ class GPT(nn.Module):
         n_layer: int,
         block_size: int,
         dropout: float = 0.0,
+        n_expert: int = 0,
+        top_k: int = 2,
+        aux_coef: float = 0.01,
     ) -> None:
         super().__init__()
         self.block_size = block_size
+        self.aux_coef = aux_coef
 
         self.wte = Embedding(vocab_size, n_embd)  # token -> vector
         # niente wpe: la posizione la mette RoPE dentro l'attention, ruotando q e k
         self.drop = Dropout(dropout)
         self.blocks = nn.ModuleList(
-            [Block(n_embd, n_head, block_size, dropout) for _ in range(n_layer)]
+            [
+                Block(n_embd, n_head, block_size, dropout, n_expert, top_k)
+                for _ in range(n_layer)
+            ]
         )
-        self.ln_f = LayerNorm(n_embd)  # obbligatoria in pre-LN
+        self.ln_f = RMSNorm(n_embd)  # obbligatoria in pre-LN
         self.lm_head = Linear(n_embd, vocab_size, bias=False)
 
         # weight tying, LO STESSO tensore, non una copia
@@ -222,6 +307,10 @@ class GPT(nn.Module):
             return logits, None
 
         loss = F.cross_entropy(logits.view(B * T, -1), targets.view(B * T))
+        # la aux loss solo in training: in eval la loss resta cross entropy pura, confrontabile col denso e in bpb
+        moes = [b.mlp for b in self.blocks if isinstance(b.mlp, MoE)]
+        if moes and self.training:
+            loss = loss + self.aux_coef * sum(m.aux_loss for m in moes) / len(moes)
         return logits, loss
 
     def set_cache(self, enabled: bool) -> None:
@@ -452,6 +541,14 @@ if __name__ == "__main__":
     assert (normed.std(dim=-1, unbiased=False) - 1).abs().max() < 1e-3
     print("LayerNorm: identica a F.layer_norm, media 0 / var 1 ok")
 
+    # RMSNorm: identica a quella di torch, e la media dei quadrati diventa 1 (la media NON va a 0)
+    rms = RMSNorm(C).to(device)
+    assert torch.allclose(rms(xh), F.rms_norm(xh, (C,), rms.weight, rms.eps), atol=1e-6)
+    rn = rms(xh + 3.0)  # sposto tutto di +3: LayerNorm lo cancellerebbe, RMSNorm no
+    assert ((rn.pow(2).mean(dim=-1)) - 1).abs().max() < 1e-4
+    assert rn.mean(dim=-1).min() > 0.5
+    print(f"RMSNorm: identica a F.rms_norm, rms 1 ok, media di x+3 resta {rn.mean().item():.2f}")
+
     # MLP: shape, parametri, e NESSUNA comunicazione tra token
     mlp = MLP(C).to(device)
     assert mlp(xh).shape == (B, T, C)
@@ -463,6 +560,62 @@ if __name__ == "__main__":
     assert torch.allclose(m1[:, :3], m3[:, :3], atol=1e-6)
     assert torch.allclose(m1[:, 4:], m3[:, 4:], atol=1e-6)
     print("MLP: shape ok, per-token ok (posizione 3 alterata, le altre invariate)")
+
+    # SwiGLU: la formula scritta a mano, i parametri, e di nuovo nessuna comunicazione tra token
+    sw = SwiGLU(C).to(device)
+    H = sw.hidden
+    assert H % 64 == 0 and H >= 8 * C / 3
+    assert sum(p.numel() for p in sw.parameters()) == 3 * C * H
+    Wg, Wu = sw.fc.weight[:H], sw.fc.weight[H:]
+    g = xh @ Wg.T
+    ref = (g * torch.sigmoid(g) * (xh @ Wu.T)) @ sw.proj.weight.T  # silu(g) = g * sigmoid(g)
+    assert torch.allclose(sw(xh), ref, atol=1e-6)
+    s1, s3 = sw(xh), sw(xh3)
+    assert torch.allclose(s1[:, :3], s3[:, :3], atol=1e-6)
+    assert torch.allclose(s1[:, 4:], s3[:, 4:], atol=1e-6)
+    print(f"SwiGLU: formula ok, hidden {H} (8/3 C = {8 * C / 3:.1f}), {3 * C * H} parametri, per-token ok")
+
+    # MoE: con un esperto solo e' esattamente quell'esperto
+    moe1 = MoE(C, n_expert=1, top_k=1).to(device)
+    assert torch.allclose(moe1(xh), moe1.experts[0](xh), atol=1e-6)
+
+    # MoE: confronto col calcolo ingenuo token per token, somma pesata dei k esperti scelti
+    E, k = 4, 2
+    moe = MoE(C, n_expert=E, top_k=k).to(device)
+    mo = moe(xh)
+    xf = xh.reshape(-1, C)
+    pr = F.softmax(moe.router(xf), dim=-1)
+    ref = torch.zeros_like(xf)
+    for n in range(xf.size(0)):
+        wn, en = pr[n].topk(k)
+        for wi, ei in zip(wn / wn.sum(), en):
+            ref[n] += wi * moe.experts[ei](xf[n : n + 1])[0]
+    assert torch.allclose(mo, ref.view(B, T, C), atol=1e-6)
+    assert sum(p.numel() for p in moe.parameters()) == E * 3 * C * H + C * E
+
+    # per-token anche lui: il routing guarda solo il proprio vettore
+    mo3 = moe(xh3)
+    assert torch.allclose(mo[:, :3], mo3[:, :3], atol=1e-6)
+    assert torch.allclose(mo[:, 4:], mo3[:, 4:], atol=1e-6)
+
+    # il gradiente arriva al router attraverso i pesi w e la aux loss
+    (moe(xh).sum() + moe.aux_loss).backward()
+    assert moe.router.weight.grad.abs().sum() > 0
+    assert all(e.fc.weight.grad is not None for e in moe.experts)
+
+    # aux loss: ~1 col carico uniforme dell'init, n_expert quando collassa tutto su un esperto
+    assert abs(moe.aux_loss.item() - 1) < 0.2, moe.aux_loss.item()
+    assert torch.isclose(moe.load.sum(), torch.tensor(1.0, device=device))
+    moec = MoE(C, n_expert=E, top_k=1).to(device)
+    with torch.no_grad():
+        moec.router.weight.zero_()
+        moec.router.weight[0] = 1.0
+    moec(xh.abs() + 5.0)  # sum(x) grande e positiva: l'esperto 0 vince ovunque
+    assert moec.load[0] == 1.0 and abs(moec.aux_loss.item() - E) < 1e-3
+    print(
+        f"MoE: 1 esperto = SwiGLU, uguale al calcolo ingenuo, per-token ok, "
+        f"aux {moe.aux_loss.item():.3f} uniforme / {moec.aux_loss.item():.3f} collassata"
+    )
 
     # Block: shape, causalita', e "parte come identita'"
     block = Block(C, n_head, block_size=T).to(device)
@@ -488,11 +641,27 @@ if __name__ == "__main__":
     n = sum(p.numel() for p in gpt.parameters())
     expected = (
         tok.vocab_size * n_embd  # wte (lm_head e' legata, non conta due volte)
-        + n_layer * (12 * n_embd**2 + 10 * n_embd)  # blocchi (RoPE non ha parametri)
-        + 2 * n_embd  # ln_f
+        + n_layer
+        * (
+            4 * n_embd**2 + n_embd  # attention: c_attn 3C^2 + proj C^2 + C
+            + 3 * n_embd * gpt.blocks[0].mlp.hidden  # SwiGLU, niente bias
+            + 2 * n_embd  # ln1, ln2 (RMSNorm solo gamma, RoPE nessun parametro)
+        )
+        + n_embd  # ln_f
     )
     assert n == expected, (n, expected)
     print(f"GPT: {n:,} parametri (formula ok)")
+
+    # GPT MoE: ogni blocco ha n_expert SwiGLU al posto di uno, piu' il router C x E
+    gm = GPT(tok.vocab_size, n_embd, n_head_g, n_layer, bs, n_expert=8, top_k=2).to(device)
+    Hg = gpt.blocks[0].mlp.hidden
+    nm = sum(p.numel() for p in gm.parameters())
+    assert nm == n + n_layer * (7 * 3 * n_embd * Hg + 8 * n_embd), nm
+    gm.train()
+    _, lm = gm(*get_batch(train, batch_size=8, block_size=bs))
+    gm.eval()
+    _, le = gm(*get_batch(train, batch_size=8, block_size=bs))
+    print(f"GPT MoE 8x top-2: {nm:,} parametri (formula ok), loss train {lm.item():.4f} (con aux) eval {le.item():.4f}")
 
     xg, yg = get_batch(train, batch_size=8, block_size=bs)
     _, lg = gpt(xg, yg)

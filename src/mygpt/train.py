@@ -4,16 +4,21 @@ from pathlib import Path
 
 import torch
 
-from mygpt.data import BPETokenizer, get_batch, load_data
+import numpy as np
+
+from mygpt.data import BPETokenizer, get_batch
 from mygpt.model import GPT
 
 # config
 n_embd, n_head, n_layer = 384, 6, 6
 block_size = 256
 dropout = 0.0  # con <1 epoca non c'e' niente da memorizzare: sarebbe solo rumore
+n_expert = 8  # 0 = MLP densa
+top_k = 2  # esperti attivi per token
+aux_coef = 0.01  # peso della load balancing loss (Switch)
 
 batch_size = 64
-max_iters = 20000  # ~2.3 epoche su 145M token
+max_iters = 60000  # ~1B token, ~0.7 epoche dei 1.37B di train
 learning_rate = 1e-3
 min_lr = 1e-4
 warmup_iters = 100
@@ -21,7 +26,7 @@ weight_decay = 0.1
 betas = (0.9, 0.99)
 grad_clip = 1.0
 
-eval_interval = 500
+eval_interval = 2000
 eval_iters = 100  # 13M token di val: 100 batch bastano
 compile_model = True
 out_dir = Path("out")
@@ -29,6 +34,8 @@ out_dir = Path("out")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 torch.manual_seed(1337)
 torch.set_float32_matmul_precision("high")  # abilita i tensor core TF32
+# il MoE usa nonzero, la cui shape dipende dai dati: senza questo compile spezza il grafo e l'MoE gira in eager
+torch._dynamo.config.capture_dynamic_output_shape_ops = True
 
 
 def sync() -> None:
@@ -38,14 +45,20 @@ def sync() -> None:
 
 # dati e modello
 tok = BPETokenizer.load("data/bpe-it.json")
-train_data, val_data = load_data("data/input-it.bin", tok, device)
+# memmap uint16: 2.3B token sono 4.6 GB su disco, in int64 in VRAM sarebbero 18 GB
+# la val e' l'ultimo 10% di input-it.bin, la stessa di tutti i run precedenti (scratch/build_it_corpus.py)
+train_data = np.memmap("data/it-train.bin", dtype=np.uint16, mode="r")
+val_data = np.memmap("data/it-val.bin", dtype=np.uint16, mode="r")
+print(f"train {len(train_data):,} token | val {len(val_data):,} token")
 # bit/byte: l'unica metrica confrontabile tra tokenizzatori diversi, perche'
 # normalizza la loss per quanto testo vero sta dentro un token
 _probe = val_data[:200_000].tolist()
 bytes_per_token = len(tok.decode(_probe).encode()) / len(_probe)
 print(f"vocab {tok.vocab_size} | {bytes_per_token:.2f} byte/token sulla val")
 
-raw_model = GPT(tok.vocab_size, n_embd, n_head, n_layer, block_size, dropout).to(device)
+raw_model = GPT(
+    tok.vocab_size, n_embd, n_head, n_layer, block_size, dropout, n_expert, top_k, aux_coef
+).to(device)
 print(f"{sum(p.numel() for p in raw_model.parameters()):,} parametri")
 
 # weight decay solo sui tensori 2D+ (le matrici dei matmul), non su bias e LayerNorm
@@ -86,7 +99,7 @@ def estimate_loss() -> dict[str, float]:
     for name, data in (("train", train_data), ("val", val_data)):
         losses = torch.zeros(eval_iters, device=device)
         for k in range(eval_iters):
-            x, y = get_batch(data, batch_size, block_size)
+            x, y = get_batch(data, batch_size, block_size, device)
             with torch.autocast(device_type=device, dtype=torch.bfloat16):
                 _, loss = model(x, y)
             losses[k] = loss
@@ -117,6 +130,11 @@ for it in range(max_iters + 1):
             f"step {it:5d} | train {losses['train']:.4f} | val {losses['val']:.4f} "
             f"| bpb {bpb:.3f} | lr {lr:.2e} | {ms:6.1f} ms/it | {tok_s / 1e3:5.0f}k tok/s"
         )
+        if n_expert:
+            # carico per esperto rispetto all'uniforme (1.00 = 1/n_expert dei token), per layer
+            for i, block in enumerate(raw_model.blocks):
+                load = " ".join(f"{v:.2f}" for v in (block.mlp.load * n_expert).tolist())
+                print(f"    L{i} aux {block.mlp.aux_loss.item():.3f} | carico {load}")
 
         if losses["val"] < best_val and it > 0:
             best_val = losses["val"]
@@ -130,6 +148,8 @@ for it in range(max_iters + 1):
                         n_head=n_head,
                         n_layer=n_layer,
                         block_size=block_size,
+                        n_expert=n_expert,
+                        top_k=top_k,
                     ),
                     "iter": it,
                     "val_loss": best_val,
@@ -138,7 +158,7 @@ for it in range(max_iters + 1):
             )
         t_last, it_last = time.time(), it  # l'eval non conta nel tempo/iter
 
-    x, y = get_batch(train_data, batch_size, block_size)
+    x, y = get_batch(train_data, batch_size, block_size, device)
     with torch.autocast(device_type=device, dtype=torch.bfloat16):
         _, loss = model(x, y)
 

@@ -1,0 +1,282 @@
+train 1,367,636,190 token | val 14,488,421 token
+vocab 8192 | 3.67 byte/token sulla val
+63,333,504 parametri
+  decay:    115 tensori, 63,326,208
+  no decay:  19 tensori,      7,296
+step     0 | train 9.0882 | val 9.0884 | bpb 3.576 | lr 9.90e-06 |    nan ms/it |     0k tok/s
+    L0 aux 1.015 | carico 1.21 0.66 1.16 0.91 1.44 0.91 0.99 0.73
+    L1 aux 1.019 | carico 1.04 0.85 1.48 1.22 0.98 0.79 0.58 1.06
+    L2 aux 1.005 | carico 1.09 1.22 0.94 1.04 0.68 0.97 0.96 1.11
+    L3 aux 1.035 | carico 0.37 1.09 0.76 1.47 0.63 1.34 1.18 1.16
+    L4 aux 1.032 | carico 0.58 1.38 0.62 1.15 1.07 1.26 0.53 1.41
+    L5 aux 1.024 | carico 0.96 0.90 1.52 1.08 0.98 0.45 0.97 1.15
+step  2000 | train 3.4271 | val 3.6768 | bpb 1.447 | lr 9.98e-04 |  110.5 ms/it |   148k tok/s
+    L0 aux 1.040 | carico 0.79 0.74 1.77 1.10 1.28 0.99 0.95 0.39
+    L1 aux 1.025 | carico 1.16 0.99 1.36 0.55 1.27 0.93 0.77 0.97
+    L2 aux 1.050 | carico 1.19 1.22 1.05 1.11 1.28 0.91 0.57 0.67
+    L3 aux 1.045 | carico 0.93 1.41 0.92 1.29 0.87 0.84 0.74 1.00
+    L4 aux 1.106 | carico 1.13 0.89 1.00 0.79 0.82 1.03 1.75 0.58
+    L5 aux 1.138 | carico 0.58 1.73 1.35 1.34 0.75 0.60 0.88 0.77
+step  4000 | train 3.2001 | val 3.4477 | bpb 1.357 | lr 9.91e-04 |  115.1 ms/it |   142k tok/s
+    L0 aux 1.041 | carico 0.75 0.63 1.63 1.26 1.38 1.08 0.89 0.38
+    L1 aux 1.008 | carico 1.19 0.94 1.24 0.65 1.18 0.95 0.92 0.93
+    L2 aux 1.056 | carico 1.23 1.25 0.97 1.01 1.37 0.94 0.57 0.66
+    L3 aux 1.044 | carico 0.99 1.42 1.12 1.19 0.81 0.86 0.67 0.94
+    L4 aux 1.086 | carico 1.10 0.94 1.04 0.76 0.86 1.04 1.65 0.60
+    L5 aux 1.130 | carico 0.63 1.73 1.41 1.30 0.78 0.52 0.88 0.74
+step  6000 | train 3.0789 | val 3.3509 | bpb 1.319 | lr 9.79e-04 |  116.0 ms/it |   141k tok/s
+    L0 aux 1.030 | carico 0.70 0.79 1.56 1.31 1.28 1.04 0.92 0.39
+    L1 aux 1.011 | carico 1.31 0.93 1.28 0.70 1.14 0.88 0.84 0.92
+    L2 aux 1.046 | carico 1.21 1.10 0.91 1.12 1.44 0.88 0.63 0.72
+    L3 aux 1.044 | carico 0.98 1.48 0.96 1.14 0.88 0.93 0.75 0.87
+    L4 aux 1.079 | carico 1.14 0.85 0.91 0.84 0.99 1.20 1.55 0.52
+    L5 aux 1.119 | carico 0.66 1.75 1.38 1.16 0.69 0.76 0.86 0.75
+step  8000 | train 3.0082 | val 3.2684 | bpb 1.286 | lr 9.62e-04 |  109.8 ms/it |   149k tok/s
+    L0 aux 1.030 | carico 0.73 0.84 1.60 1.19 1.35 1.01 0.90 0.38
+    L1 aux 1.009 | carico 1.21 0.96 1.21 0.65 1.17 0.93 0.88 1.00
+    L2 aux 1.052 | carico 1.29 1.07 0.93 1.01 1.43 0.98 0.61 0.68
+    L3 aux 1.037 | carico 1.05 1.42 0.91 1.06 0.97 0.91 0.73 0.94
+    L4 aux 1.107 | carico 1.03 0.76 1.13 0.82 0.91 1.13 1.72 0.49
+    L5 aux 1.123 | carico 0.54 1.71 1.46 1.19 0.71 0.73 0.90 0.76
+step 10000 | train 2.9636 | val 3.2351 | bpb 1.273 | lr 9.41e-04 |  109.1 ms/it |   150k tok/s
+    L0 aux 1.029 | carico 0.70 0.72 1.48 1.12 1.42 1.19 0.90 0.48
+    L1 aux 1.008 | carico 1.22 0.94 1.18 0.67 1.17 0.97 0.90 0.96
+    L2 aux 1.070 | carico 1.29 1.17 0.89 0.88 1.54 1.01 0.59 0.63
+    L3 aux 1.039 | carico 1.14 1.37 1.03 1.20 0.91 0.73 0.69 0.93
+    L4 aux 1.119 | carico 0.85 0.89 1.14 0.81 0.94 1.24 1.72 0.42
+    L5 aux 1.133 | carico 0.55 1.72 1.46 1.29 0.66 0.74 0.91 0.67
+step 12000 | train 2.9366 | val 3.1915 | bpb 1.256 | lr 9.15e-04 |  109.2 ms/it |   150k tok/s
+    L0 aux 1.015 | carico 0.80 0.74 1.37 1.15 1.35 1.10 0.98 0.52
+    L1 aux 1.009 | carico 1.16 0.98 1.21 0.62 1.20 0.99 0.86 0.97
+    L2 aux 1.051 | carico 1.24 1.04 1.01 0.93 1.51 0.98 0.65 0.62
+    L3 aux 1.038 | carico 1.09 1.36 0.98 1.18 0.96 0.80 0.69 0.94
+    L4 aux 1.113 | carico 0.95 0.76 1.08 0.78 0.87 1.21 1.79 0.56
+    L5 aux 1.105 | carico 0.64 1.66 1.41 1.19 0.71 0.81 0.88 0.70
+step 14000 | train 2.8903 | val 3.1552 | bpb 1.242 | lr 8.86e-04 |  114.2 ms/it |   143k tok/s
+    L0 aux 1.024 | carico 0.66 0.83 1.57 1.14 1.41 1.03 0.87 0.50
+    L1 aux 1.008 | carico 1.25 0.96 1.21 0.78 1.21 0.93 0.76 0.91
+    L2 aux 1.053 | carico 1.22 1.06 0.93 0.93 1.55 0.96 0.63 0.72
+    L3 aux 1.048 | carico 0.96 1.44 0.92 1.23 0.92 0.76 0.77 1.00
+    L4 aux 1.105 | carico 1.05 0.78 0.99 0.82 1.04 1.21 1.68 0.42
+    L5 aux 1.118 | carico 0.65 1.71 1.45 1.25 0.69 0.68 0.85 0.73
+step 16000 | train 2.8627 | val 3.1261 | bpb 1.230 | lr 8.52e-04 |  110.4 ms/it |   148k tok/s
+    L0 aux 1.012 | carico 0.78 0.70 1.37 1.14 1.36 1.02 1.01 0.62
+    L1 aux 1.013 | carico 1.16 0.99 1.17 0.67 1.25 0.92 0.81 1.02
+    L2 aux 1.055 | carico 1.17 1.11 0.91 0.88 1.55 1.07 0.57 0.73
+    L3 aux 1.031 | carico 1.10 1.41 1.03 1.10 0.82 0.79 0.81 0.94
+    L4 aux 1.096 | carico 0.90 0.87 1.08 0.84 0.91 1.13 1.73 0.53
+    L5 aux 1.126 | carico 0.61 1.74 1.44 1.27 0.67 0.73 0.86 0.68
+step 18000 | train 2.8509 | val 3.1173 | bpb 1.227 | lr 8.16e-04 |  109.3 ms/it |   150k tok/s
+    L0 aux 1.020 | carico 0.73 0.89 1.37 1.14 1.21 1.27 0.85 0.53
+    L1 aux 1.008 | carico 1.18 0.97 1.19 0.68 1.21 0.96 0.85 0.96
+    L2 aux 1.052 | carico 1.22 0.99 1.00 0.84 1.54 1.09 0.58 0.74
+    L3 aux 1.036 | carico 1.02 1.32 1.16 1.20 0.87 0.78 0.68 0.96
+    L4 aux 1.113 | carico 0.89 0.72 1.04 0.79 1.08 1.17 1.79 0.52
+    L5 aux 1.117 | carico 0.66 1.74 1.36 1.29 0.68 0.70 0.91 0.67
+step 20000 | train 2.8417 | val 3.0956 | bpb 1.218 | lr 7.76e-04 |  109.3 ms/it |   150k tok/s
+    L0 aux 1.008 | carico 0.78 0.80 1.30 1.14 1.32 1.09 0.86 0.71
+    L1 aux 1.007 | carico 1.20 1.00 1.22 0.66 1.20 0.92 0.88 0.91
+    L2 aux 1.060 | carico 1.19 0.98 1.03 0.90 1.60 1.02 0.62 0.66
+    L3 aux 1.041 | carico 0.95 1.39 1.08 1.26 0.83 0.80 0.76 0.94
+    L4 aux 1.087 | carico 0.98 0.81 1.00 0.83 0.96 1.16 1.71 0.56
+    L5 aux 1.116 | carico 0.73 1.77 1.34 1.22 0.70 0.69 0.86 0.69
+step 22000 | train 2.8068 | val 3.0563 | bpb 1.203 | lr 7.34e-04 |  111.3 ms/it |   147k tok/s
+    L0 aux 1.016 | carico 0.70 0.85 1.40 1.18 1.25 1.15 0.90 0.57
+    L1 aux 1.009 | carico 1.20 0.90 1.11 0.74 1.28 0.97 0.84 0.96
+    L2 aux 1.063 | carico 1.27 1.02 1.07 0.82 1.57 1.00 0.59 0.68
+    L3 aux 1.042 | carico 1.13 1.24 1.21 1.20 1.00 0.71 0.58 0.91
+    L4 aux 1.121 | carico 0.88 0.70 1.00 0.72 1.05 1.22 1.86 0.57
+    L5 aux 1.104 | carico 0.70 1.67 1.40 1.35 0.74 0.75 0.78 0.61
+step 24000 | train 2.7850 | val 3.0413 | bpb 1.197 | lr 6.90e-04 |  111.8 ms/it |   147k tok/s
+    L0 aux 1.016 | carico 0.81 0.72 1.43 1.12 1.34 1.14 0.83 0.61
+    L1 aux 1.008 | carico 1.19 0.97 1.08 0.71 1.22 0.97 0.86 1.01
+    L2 aux 1.070 | carico 1.24 1.02 0.91 0.85 1.64 1.05 0.60 0.69
+    L3 aux 1.036 | carico 1.24 1.27 0.97 1.19 0.94 0.67 0.71 1.01
+    L4 aux 1.148 | carico 0.92 0.68 1.02 0.78 0.91 1.32 1.90 0.47
+    L5 aux 1.120 | carico 0.69 1.72 1.46 1.30 0.66 0.73 0.82 0.63
+step 26000 | train 2.7570 | val 3.0202 | bpb 1.188 | lr 6.45e-04 |  111.0 ms/it |   148k tok/s
+    L0 aux 1.016 | carico 0.77 0.82 1.35 1.17 1.36 1.11 0.90 0.53
+    L1 aux 1.005 | carico 1.18 1.03 1.18 0.72 1.26 0.89 0.88 0.86
+    L2 aux 1.066 | carico 1.25 1.04 0.95 0.93 1.61 0.95 0.61 0.66
+    L3 aux 1.044 | carico 1.08 1.42 1.09 1.20 0.88 0.64 0.78 0.90
+    L4 aux 1.093 | carico 0.98 0.75 1.06 0.81 0.90 1.19 1.73 0.58
+    L5 aux 1.103 | carico 0.69 1.74 1.30 1.27 0.72 0.72 0.83 0.73
+step 28000 | train 2.7581 | val 2.9878 | bpb 1.176 | lr 5.98e-04 |  109.6 ms/it |   149k tok/s
+    L0 aux 1.010 | carico 0.82 0.79 1.30 1.24 1.35 1.03 0.93 0.54
+    L1 aux 1.007 | carico 1.16 0.96 1.18 0.72 1.31 0.90 0.88 0.89
+    L2 aux 1.056 | carico 1.24 1.00 0.95 0.91 1.58 0.97 0.63 0.72
+    L3 aux 1.035 | carico 1.04 1.35 1.13 1.16 0.91 0.61 0.92 0.88
+    L4 aux 1.091 | carico 0.94 0.67 1.09 0.85 1.03 1.18 1.69 0.55
+    L5 aux 1.104 | carico 0.66 1.72 1.35 1.26 0.72 0.75 0.84 0.71
+step 30000 | train 2.7180 | val 2.9856 | bpb 1.175 | lr 5.51e-04 |  109.6 ms/it |   150k tok/s
+    L0 aux 1.008 | carico 0.81 0.77 1.32 1.18 1.26 1.07 0.95 0.63
+    L1 aux 1.008 | carico 1.11 0.97 1.19 0.75 1.33 0.87 0.86 0.91
+    L2 aux 1.066 | carico 1.26 0.97 0.90 0.96 1.63 0.97 0.61 0.71
+    L3 aux 1.033 | carico 0.94 1.40 1.04 1.22 0.82 0.84 0.78 0.96
+    L4 aux 1.087 | carico 1.00 0.72 1.03 0.80 1.16 1.13 1.66 0.50
+    L5 aux 1.091 | carico 0.77 1.75 1.29 1.19 0.73 0.68 0.85 0.75
+step 32000 | train 2.7074 | val 2.9644 | bpb 1.166 | lr 5.04e-04 |  117.5 ms/it |   139k tok/s
+    L0 aux 1.014 | carico 0.78 0.73 1.28 1.30 1.39 1.03 0.94 0.54
+    L1 aux 1.003 | carico 1.14 0.91 1.01 0.83 1.27 0.96 0.92 0.96
+    L2 aux 1.076 | carico 1.26 0.99 0.93 0.86 1.69 0.98 0.56 0.74
+    L3 aux 1.042 | carico 1.07 1.22 1.25 1.18 0.86 0.57 0.80 1.05
+    L4 aux 1.117 | carico 0.83 0.76 1.02 0.73 1.05 1.20 1.85 0.56
+    L5 aux 1.105 | carico 0.65 1.69 1.44 1.29 0.72 0.73 0.78 0.70
+step 34000 | train 2.6685 | val 2.9436 | bpb 1.158 | lr 4.57e-04 |  126.2 ms/it |   130k tok/s
+    L0 aux 1.013 | carico 0.75 0.78 1.31 1.19 1.34 1.14 0.96 0.54
+    L1 aux 1.004 | carico 1.17 0.91 1.09 0.77 1.25 1.00 0.89 0.92
+    L2 aux 1.075 | carico 1.19 1.01 0.93 0.87 1.70 1.01 0.59 0.70
+    L3 aux 1.047 | carico 1.10 1.25 1.17 1.28 0.94 0.51 0.79 0.97
+    L4 aux 1.118 | carico 0.84 0.81 1.07 0.76 0.90 1.24 1.84 0.55
+    L5 aux 1.108 | carico 0.74 1.75 1.36 1.31 0.70 0.73 0.78 0.63
+step 36000 | train 2.6568 | val 2.9338 | bpb 1.154 | lr 4.12e-04 |  125.1 ms/it |   131k tok/s
+    L0 aux 1.016 | carico 0.71 0.72 1.40 1.19 1.31 1.14 0.93 0.61
+    L1 aux 1.005 | carico 1.13 0.93 1.11 0.79 1.29 0.99 0.85 0.92
+    L2 aux 1.080 | carico 1.23 0.99 0.90 0.87 1.70 1.02 0.59 0.71
+    L3 aux 1.040 | carico 1.14 1.25 1.10 1.23 0.96 0.60 0.70 1.03
+    L4 aux 1.114 | carico 0.83 0.69 1.03 0.72 1.14 1.22 1.80 0.56
+    L5 aux 1.098 | carico 0.79 1.70 1.37 1.31 0.69 0.77 0.74 0.62
+step 38000 | train 2.6465 | val 2.9152 | bpb 1.147 | lr 3.68e-04 |  114.7 ms/it |   143k tok/s
+    L0 aux 1.005 | carico 0.91 0.77 1.32 1.17 1.27 1.03 0.91 0.61
+    L1 aux 1.007 | carico 1.14 0.98 1.16 0.72 1.31 0.89 0.87 0.93
+    L2 aux 1.076 | carico 1.26 0.97 0.90 0.89 1.68 1.02 0.61 0.67
+    L3 aux 1.039 | carico 1.16 1.41 1.01 1.12 0.93 0.70 0.78 0.90
+    L4 aux 1.112 | carico 0.98 0.69 1.02 0.81 0.96 1.23 1.80 0.52
+    L5 aux 1.102 | carico 0.65 1.73 1.35 1.25 0.69 0.80 0.83 0.70
+step 40000 | train 2.6266 | val 2.8955 | bpb 1.139 | lr 3.26e-04 |  109.3 ms/it |   150k tok/s
+    L0 aux 1.010 | carico 0.75 0.77 1.38 1.22 1.31 1.04 0.90 0.62
+    L1 aux 1.004 | carico 1.15 0.89 1.11 0.80 1.29 0.92 0.92 0.92
+    L2 aux 1.073 | carico 1.22 1.00 0.93 0.87 1.65 1.02 0.58 0.73
+    L3 aux 1.044 | carico 1.12 1.30 1.13 1.20 0.84 0.53 0.88 1.00
+    L4 aux 1.097 | carico 0.85 0.83 1.08 0.79 0.97 1.19 1.75 0.55
+    L5 aux 1.098 | carico 0.73 1.71 1.41 1.19 0.71 0.73 0.82 0.70
+step 42000 | train 2.6259 | val 2.8810 | bpb 1.134 | lr 2.86e-04 |  109.3 ms/it |   150k tok/s
+    L0 aux 1.009 | carico 0.76 0.75 1.33 1.07 1.30 1.13 1.01 0.65
+    L1 aux 1.005 | carico 1.15 0.99 1.15 0.75 1.25 0.94 0.85 0.93
+    L2 aux 1.078 | carico 1.26 1.03 0.87 0.88 1.69 0.97 0.61 0.69
+    L3 aux 1.040 | carico 1.21 1.34 0.99 1.20 0.94 0.78 0.62 0.93
+    L4 aux 1.112 | carico 1.01 0.62 0.99 0.78 1.09 1.23 1.77 0.51
+    L5 aux 1.102 | carico 0.75 1.71 1.42 1.22 0.67 0.76 0.83 0.64
+step 44000 | train 2.5923 | val 2.8601 | bpb 1.125 | lr 2.49e-04 |  109.3 ms/it |   150k tok/s
+    L0 aux 1.008 | carico 0.79 0.83 1.33 1.12 1.32 1.10 0.92 0.59
+    L1 aux 1.003 | carico 1.15 0.94 1.10 0.76 1.25 0.94 0.93 0.94
+    L2 aux 1.067 | carico 1.21 1.03 0.96 0.81 1.65 0.98 0.63 0.73
+    L3 aux 1.042 | carico 1.16 1.24 1.23 1.20 0.91 0.67 0.61 0.98
+    L4 aux 1.113 | carico 0.93 0.65 1.09 0.78 1.12 1.20 1.76 0.47
+    L5 aux 1.095 | carico 0.73 1.71 1.30 1.32 0.70 0.80 0.79 0.65
+step 46000 | train 2.5547 | val 2.8281 | bpb 1.113 | lr 2.16e-04 |  109.3 ms/it |   150k tok/s
+    L0 aux 1.007 | carico 0.77 0.77 1.30 1.08 1.34 1.14 0.96 0.64
+    L1 aux 1.006 | carico 1.19 0.95 1.12 0.75 1.25 0.94 0.86 0.94
+    L2 aux 1.079 | carico 1.24 0.96 0.91 0.86 1.71 0.98 0.63 0.71
+    L3 aux 1.030 | carico 1.26 1.22 1.00 1.17 0.98 0.72 0.68 0.97
+    L4 aux 1.127 | carico 0.87 0.67 0.98 0.79 1.17 1.29 1.80 0.42
+    L5 aux 1.090 | carico 0.74 1.63 1.41 1.28 0.69 0.82 0.82 0.62
+step 48000 | train 2.5573 | val 2.8251 | bpb 1.112 | lr 1.86e-04 |  113.0 ms/it |   145k tok/s
+    L0 aux 1.001 | carico 0.83 0.82 1.32 1.13 1.29 1.02 0.86 0.73
+    L1 aux 1.003 | carico 1.08 0.94 1.10 0.80 1.30 0.92 0.90 0.96
+    L2 aux 1.076 | carico 1.23 0.97 0.87 0.87 1.69 1.02 0.64 0.72
+    L3 aux 1.028 | carico 1.16 1.28 1.11 1.18 0.84 0.74 0.72 0.96
+    L4 aux 1.127 | carico 0.91 0.68 0.96 0.80 1.17 1.21 1.86 0.42
+    L5 aux 1.104 | carico 0.75 1.71 1.41 1.28 0.68 0.72 0.79 0.65
+step 50000 | train 2.5403 | val 2.7979 | bpb 1.101 | lr 1.60e-04 |  118.1 ms/it |   139k tok/s
+    L0 aux 1.000 | carico 0.83 0.82 1.30 1.05 1.26 1.08 0.96 0.71
+    L1 aux 1.004 | carico 1.10 0.93 1.10 0.76 1.32 0.98 0.88 0.93
+    L2 aux 1.069 | carico 1.26 0.93 0.92 0.86 1.63 1.02 0.63 0.74
+    L3 aux 1.039 | carico 1.14 1.20 1.20 1.24 0.94 0.63 0.68 0.96
+    L4 aux 1.109 | carico 0.87 0.66 1.04 0.74 1.17 1.21 1.78 0.53
+    L5 aux 1.091 | carico 0.76 1.71 1.32 1.29 0.72 0.77 0.79 0.64
+step 52000 | train 2.5323 | val 2.7928 | bpb 1.099 | lr 1.39e-04 |  125.2 ms/it |   131k tok/s
+    L0 aux 1.003 | carico 0.77 0.89 1.30 1.11 1.30 1.09 0.89 0.64
+    L1 aux 1.004 | carico 1.08 0.98 1.12 0.75 1.32 0.93 0.90 0.92
+    L2 aux 1.065 | carico 1.23 1.00 0.95 0.82 1.65 1.00 0.63 0.73
+    L3 aux 1.040 | carico 1.16 1.28 1.24 1.17 0.88 0.57 0.78 0.93
+    L4 aux 1.106 | carico 0.88 0.69 1.06 0.75 1.05 1.20 1.79 0.56
+    L5 aux 1.098 | carico 0.73 1.70 1.37 1.30 0.71 0.75 0.81 0.63
+step 54000 | train 2.5205 | val 2.7681 | bpb 1.089 | lr 1.22e-04 |  117.8 ms/it |   139k tok/s
+    L0 aux 0.999 | carico 0.82 0.80 1.28 1.10 1.25 1.09 0.96 0.69
+    L1 aux 1.002 | carico 1.12 0.96 1.06 0.81 1.29 0.96 0.84 0.96
+    L2 aux 1.077 | carico 1.23 0.93 0.93 0.85 1.69 1.04 0.63 0.68
+    L3 aux 1.028 | carico 1.21 1.24 1.09 1.15 0.91 0.66 0.77 0.97
+    L4 aux 1.116 | carico 0.92 0.68 1.00 0.78 1.01 1.27 1.81 0.53
+    L5 aux 1.098 | carico 0.76 1.67 1.41 1.32 0.67 0.75 0.80 0.64
+step 56000 | train 2.4904 | val 2.7814 | bpb 1.094 | lr 1.10e-04 |  119.3 ms/it |   137k tok/s
+    L0 aux 1.003 | carico 0.76 0.80 1.33 1.24 1.30 1.02 0.92 0.62
+    L1 aux 1.002 | carico 1.18 0.95 1.20 0.81 1.26 0.83 0.94 0.83
+    L2 aux 1.063 | carico 1.18 0.88 0.89 1.05 1.65 0.95 0.65 0.76
+    L3 aux 1.043 | carico 0.98 1.47 1.08 1.16 0.79 0.77 0.84 0.91
+    L4 aux 1.070 | carico 1.17 0.78 0.94 0.88 1.09 1.13 1.54 0.49
+    L5 aux 1.091 | carico 0.81 1.79 1.21 1.11 0.70 0.72 0.83 0.82
+step 58000 | train 2.4913 | val 2.7630 | bpb 1.087 | lr 1.02e-04 |  116.8 ms/it |   140k tok/s
+    L0 aux 0.999 | carico 0.78 0.76 1.30 1.12 1.30 1.05 0.98 0.71
+    L1 aux 1.003 | carico 1.10 0.93 1.05 0.82 1.31 0.97 0.88 0.94
+    L2 aux 1.079 | carico 1.24 0.97 0.94 0.80 1.68 1.04 0.62 0.70
+    L3 aux 1.041 | carico 1.16 1.20 1.22 1.23 0.90 0.51 0.87 0.91
+    L4 aux 1.118 | carico 0.74 0.75 1.02 0.74 1.19 1.29 1.79 0.49
+    L5 aux 1.101 | carico 0.71 1.69 1.38 1.33 0.70 0.79 0.78 0.62
+step 60000 | train 2.5023 | val 2.7562 | bpb 1.085 | lr 1.00e-04 |  118.6 ms/it |   138k tok/s
+    L0 aux 0.999 | carico 0.82 0.82 1.34 1.16 1.26 1.04 0.91 0.65
+    L1 aux 1.003 | carico 1.21 0.93 1.09 0.81 1.27 0.93 0.88 0.90
+    L2 aux 1.066 | carico 1.22 1.01 0.96 0.84 1.62 1.00 0.61 0.74
+    L3 aux 1.035 | carico 1.14 1.28 1.20 1.16 0.90 0.68 0.71 0.93
+    L4 aux 1.118 | carico 0.94 0.69 1.07 0.77 1.07 1.23 1.77 0.46
+    L5 aux 1.105 | carico 0.74 1.73 1.33 1.31 0.65 0.79 0.81 0.64
+
+miglior val loss: 2.7562  ->  out/ckpt.pt
+============================================================
+
+Cardinale Giulio Antonio Santori
+ Cardinale Tour-dio-ugorico, Qualificati al secondo turno, Retrocessi
+In semifinale i candidati della sinistra radicale Edmond Balaustre e Jean-Pierre Simon (record) hanno diritto a giocare al meglio delle nove partite.
+
+Il PSG accede direttamente ai tre gironi di qualificazione.
+
+Tabellone
+
+Note 
+
+Campionato sudamericano di calcio Under-20 2003
+Calcio negli Stati Uniti d'America
+
+= Test di Coachella =
+
+Il test di Coachella è una metodologia di test a intervallo fra la fase di verifica del test di Coachella o il test di Coachella in seguito alla verifica del test del test di Coachella. In particolare il test di Coachella è stato usato per la prima volta in uno studio del 2009.
+
+Test 
+Il test di Coachella si basa sul test del test di Coachella, noto anche come test di Coachella, che utilizza una tecnica di test sul test di Coachella sul test di Coachella.
+
+Note
+
+Altri progetti
+
+Collegamenti esterni 
+ 
+ 
+
+Test di Coachella
+
+= Abby Adams =
+
+
+
+Biografia 
+Abby ha studiato per un periodo di temporanea carriera con Jeremy Butler come assistente di Michael Glennius. Successivamente ha lavorato per la compagnia d'opera Theatre and Symphony, e successivamente per la compagnia di Eric Hale.
+
+L'ha fatta conoscere alla cultura hip hop dal 1980, quando la sua prima performance, gli venne concessa una vittoria da Kelly Kelly nei Grammy Awards.
+
+Nell'ottobre del 1993, le fu diagnosticato un disturbo depressivo-compulsivo di natura nervosa. La sua carriera in Italia proseguì per un periodo, finché nel 2002 fu designata da Jeremy Butler come una delle migliori attrici italiane.
+
+Nel 2006 ha iniziato a lavorare come attrice cinematografica in un'azienda di produzione televisivo, la Metro-Goldwyn-Mayer, per il quale è autrice della prima biografia di un'attrice. Nel novembre 2008 ha pubblicato il suo primo singolo, "The Birth of a Devil", che ha raggiunto il 30º posto della Top Singoli.
+
+Nel 2007 ha condotto un programma radiofonico a Radio Deejay e condotto la prima puntata in un programma televisivo, "The Birth of a Devil", e nel luglio 2007 è stata selezionata da Twitter per entrare nella lista delle donne dell'anno per l'Eurovision Song Contest.
+
+Nel 2009 ha vinto il Premio L'Oreal Métiers, la lista dei concorrenti più votati.
+
+Nel 2011 ha partecipato al programma televisivo Le Iene, per la regia di Daniele Mainardi (che ha successivamente rappresentato il Festival di Sanremo 2012, in coppia con Tilde Capone), con il brano Only Yours, scritto da Daniele Mainardi, Simone Cristicchi ed Enrica Bonaccorti, e La mia casa è con te che non mi è mai sbagliato. Nel 2011 ha partecipato al programma televisivo di Rai 2 "Oggi è sempre a fianco" condotto da Stefano Bist e Fabio Melis. Nel 2012 è stata invitata da Enrica Bonaccorti in onda su Real Estate, un programma di Canale 5 "EuroBand", in onda su Real Estate e su Rai 3.
+
+A ottobre 2013 è stata condotto da Irene Grandi su Rai 3 il programma della domenica pomeriggio di Rai 3 "Tre giorni di passione, Io sono qui", per il programma "Perché... Io sono qui", in onda su Rai 3.
+
+Dal 2014 al 2020, è stata ospite di RTL 102.5 nel programma "Io sono qui", condotto da Michele Ferraro.
+
+Nel 2012 è andata in onda su Rai Radio 1 "Oggi ti ho incontrato, qui c'è sempre un posto, in onda su Rai 3, su Rai 3, in onda su Rai 1 in diretta su Rai 2.
+
+Nel 2023 è stata tra le ospiti del programma Il giorno, dove presenta la sua nuova serie con in palio il titolo

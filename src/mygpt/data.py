@@ -171,8 +171,22 @@ def _split(data: torch.Tensor, val_frac: float) -> tuple[torch.Tensor, torch.Ten
 
 
 def get_batch(
-    data: torch.Tensor, batch_size: int, block_size: int
+    data: "torch.Tensor | np.ndarray",
+    batch_size: int,
+    block_size: int,
+    device: str = "cuda",
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    if isinstance(data, np.ndarray):
+        # np.memmap su disco: il corpus resta sul disco (e nella page cache), in GPU va solo il batch
+        ix = torch.randint(len(data) - block_size, (batch_size,)).numpy()
+        idx = ix[:, None] + np.arange(block_size)  # (B, T)
+        x = torch.from_numpy(data[idx].astype(np.int64))
+        y = torch.from_numpy(data[idx + 1].astype(np.int64))
+        # pinned + non_blocking: la copia verso la GPU si sovrappone al calcolo
+        return (
+            x.pin_memory().to(device, non_blocking=True),
+            y.pin_memory().to(device, non_blocking=True),
+        )
     ix = torch.randint(
         len(data) - block_size, (batch_size,), device=data.device
     )  # (B,)
