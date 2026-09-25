@@ -8,7 +8,7 @@ from mygpt.model import GPT
 
 parser = argparse.ArgumentParser(description="Genera testo da un checkpoint di mygpt.")
 parser.add_argument("--ckpt", default="out/ckpt.pt")
-parser.add_argument("--vocab", default="data/bpe-it.json")
+parser.add_argument("--vocab", default=None, help="di default quello salvato nel checkpoint")
 parser.add_argument("--prompt", default="\n", help="testo iniziale")
 parser.add_argument("--tokens", type=int, default=500, help="quanti token generare")
 parser.add_argument("--temperature", type=float, default=0.8)
@@ -28,7 +28,8 @@ if args.seed is not None:
 
 # weights_only=True: il checkpoint viene deserializzato senza eseguire codice
 ckpt = torch.load(args.ckpt, map_location=device, weights_only=True)
-tok = BPETokenizer.load(args.vocab)
+# i checkpoint vecchi non salvano il tokenizer: erano tutti col BPE legacy
+tok = BPETokenizer.load(args.vocab or ckpt.get("tokenizer", "data/bpe-it.json"))
 
 # dropout non e' nel config: resta al default 0.0, che e' quello che vuoi in inferenza
 model = GPT(**ckpt["config"]).to(device)

@@ -1,4 +1,4 @@
-# addestra il BPE italiano su un campione del corpus e lo salva
+# addestra il BPE italiano su un campione del corpus e lo salva, con la pre-tokenizzazione di GPT-2 (= llama.cpp "gpt-2")
 import sys, time
 from mygpt.data import BPETokenizer
 
@@ -7,8 +7,8 @@ with open("data/input-it.txt", encoding="utf-8") as f:
     sample = f.read(sample_mb * 1024**2)
 
 t = time.time()
-tok = BPETokenizer.from_text(sample, vocab_size=vocab, min_freq=min_freq)
-tok.save("data/bpe-it.json")
+tok = BPETokenizer.from_text(sample, vocab_size=vocab, min_freq=min_freq, pattern=BPETokenizer.GPT2_PAT)
+tok.save("data/bpe-it-gpt2.json")
 print(f"vocab {tok.vocab_size} da {sample_mb} MB in {(time.time()-t)/60:.1f} min", flush=True)
 print("token piu' lunghi:", sorted(tok.itob, key=len)[-8:], flush=True)
 ids = tok.encode(sample[: 5 * 1024**2])

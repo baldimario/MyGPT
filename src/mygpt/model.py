@@ -175,7 +175,8 @@ class SwiGLU(nn.Module):
     # hidden = 8/3 C invece di 4C: tre matrici C x hidden costano come le due 4C di prima (8C^2)
     def __init__(self, n_embd: int, dropout: float = 0.0, multiple_of: int = 64) -> None:
         super().__init__()
-        # arrotondato a un multiplo di 64, i tensor core lavorano a tile
+        # arrotondato a un multiplo di multiple_of: 64 basta ai tensor core (lavorano a tile), 256 serve ai K-quant di
+        # llama.cpp, che quantizzano a blocchi di 256 lungo la riga (ffn_down ha hidden come lunghezza di riga)
         self.hidden = multiple_of * math.ceil(8 * n_embd / 3 / multiple_of)
         self.fc = Linear(n_embd, 2 * self.hidden, bias=False)  # gate e up in un matmul solo, come c_attn
         self.proj = Linear(self.hidden, n_embd, bias=False)
@@ -190,14 +191,19 @@ class MoE(nn.Module):
     # Mixture of Experts: n_expert SwiGLU indipendenti, un router sceglie i top_k per ogni token
     # parametri x n_expert, calcolo per token x top_k (Shazeer 2017, Switch 2021, Mixtral 2024)
     def __init__(
-        self, n_embd: int, n_expert: int, top_k: int, dropout: float = 0.0
+        self,
+        n_embd: int,
+        n_expert: int,
+        top_k: int,
+        dropout: float = 0.0,
+        multiple_of: int = 64,
     ) -> None:
         super().__init__()
         assert 1 <= top_k <= n_expert
         self.n_expert, self.top_k = n_expert, top_k
         self.router = Linear(n_embd, n_expert, bias=False)
         self.experts = nn.ModuleList(
-            [SwiGLU(n_embd, dropout) for _ in range(n_expert)]
+            [SwiGLU(n_embd, dropout, multiple_of) for _ in range(n_expert)]
         )
         self.aux_loss = torch.zeros(())  # load balancing, lo somma GPT.forward
         self.load = torch.zeros(n_expert)  # frazione di token per esperto, solo per i log
@@ -235,6 +241,7 @@ class Block(nn.Module):
         dropout: float = 0.0,
         n_expert: int = 0,
         top_k: int = 2,
+        multiple_of: int = 64,
     ) -> None:
         super().__init__()
         self.ln1 = RMSNorm(n_embd)
@@ -243,7 +250,9 @@ class Block(nn.Module):
         self.ln2 = RMSNorm(n_embd)
         # n_expert=0: MLP densa, altrimenti MoE con lo stesso SwiGLU come esperto
         self.mlp = (
-            MoE(n_embd, n_expert, top_k, dropout) if n_expert else SwiGLU(n_embd, dropout)
+            MoE(n_embd, n_expert, top_k, dropout, multiple_of)
+            if n_expert
+            else SwiGLU(n_embd, dropout, multiple_of)
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -264,6 +273,8 @@ class GPT(nn.Module):
         n_expert: int = 0,
         top_k: int = 2,
         aux_coef: float = 0.01,
+        # 64 e' il default dei checkpoint vecchi (senza la chiave nel config); 256 rende hidden compatibile coi K-quant
+        multiple_of: int = 64,
     ) -> None:
         super().__init__()
         self.block_size = block_size
@@ -274,7 +285,7 @@ class GPT(nn.Module):
         self.drop = Dropout(dropout)
         self.blocks = nn.ModuleList(
             [
-                Block(n_embd, n_head, block_size, dropout, n_expert, top_k)
+                Block(n_embd, n_head, block_size, dropout, n_expert, top_k, multiple_of)
                 for _ in range(n_layer)
             ]
         )
@@ -573,6 +584,8 @@ if __name__ == "__main__":
     s1, s3 = sw(xh), sw(xh3)
     assert torch.allclose(s1[:, :3], s3[:, :3], atol=1e-6)
     assert torch.allclose(s1[:, 4:], s3[:, 4:], atol=1e-6)
+    assert SwiGLU(512, multiple_of=256).hidden == 1536  # 1365.3 per eccesso al multiplo di 256
+    assert SwiGLU(512).hidden == 1408  # i checkpoint 512 addestrati finora
     print(f"SwiGLU: formula ok, hidden {H} (8/3 C = {8 * C / 3:.1f}), {3 * C * H} parametri, per-token ok")
 
     # MoE: con un esperto solo e' esattamente quell'esperto

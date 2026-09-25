@@ -17,3 +17,5 @@ data/it-wiki-00.parquet
 data/input-it.bin
 data/it-*
 out/**/*.pt
+out/*.gguf
+out/*.log

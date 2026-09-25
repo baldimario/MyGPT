@@ -4,6 +4,7 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
+import regex
 import torch
 
 
@@ -54,9 +55,17 @@ def merge(ids: list[int], pair: tuple[int, int], new_id: int) -> list[int]:
 
 class BPETokenizer:
     # BPE byte-level, il vocabolario parte dai 256 byte, quindi NON esiste l'UNK token, qualunque testo e' rappresentabile. La pre-tokenizzazione spezza il testo prima di fondere, cosi' nessun token scavalca un confine di parola, lo spazio resta attaccato alla parola che segue, come in GPT-2
-    PAT = re.compile(r" ?\w+| ?[^\w\s]+|\s+")
+    # la regex fa parte del tokenizer quanto le merge: cambiarla cambia gli id, quindi si salva nel file
+    LEGACY_PAT = r" ?\w+| ?[^\w\s]+|\s+"  # i tokenizer salvati come sola lista di merge
+    # GPT-2, la stessa di llama.cpp (tokenizer.ggml.pre = "gpt-2"): lettere e cifre separate, contrazioni inglesi, e
+    # \s+(?!\S) lascia l'ultimo spazio attaccato alla parola che segue. Il |\s+ finale raccoglie il resto, llama.cpp
+    # fa lo stesso tenendo come pezzo a se' il testo che nessuna alternativa prende
+    GPT2_PAT = r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
 
-    def __init__(self, merges: list[tuple[int, int]]) -> None:
+    def __init__(self, merges: list[tuple[int, int]], pattern: str = LEGACY_PAT) -> None:
+        self.pattern = pattern
+        # la legacy resta su re: il \w di regex non e' identico a quello di re, e cambierebbe gli id dei vecchi .bin
+        self.pat = re.compile(pattern) if pattern == self.LEGACY_PAT else regex.compile(pattern)
         self.merges = [tuple(pair) for pair in merges]
         # il rank e' l'ordine di creazione: serve a rifondere nello stesso ordine
         self.ranks = {pair: 256 + i for i, pair in enumerate(self.merges)}
@@ -71,11 +80,16 @@ class BPETokenizer:
 
     @classmethod
     def from_text(
-        cls, text: str, vocab_size: int = 1024, min_freq: int = 1
+        cls,
+        text: str,
+        vocab_size: int = 1024,
+        min_freq: int = 1,
+        pattern: str = LEGACY_PAT,
     ) -> "BPETokenizer":
         assert vocab_size >= 256, "i 256 byte sono il punto di partenza obbligato"
         # si allena sui chunk UNICI pesati per frequenza: 15k invece di 295k
-        freqs = Counter(cls.PAT.findall(text))
+        pat = re.compile(pattern) if pattern == cls.LEGACY_PAT else regex.compile(pattern)
+        freqs = Counter(pat.findall(text))
         if min_freq > 1:
             # i chunk rari costano quanto gli altri a ogni giro ma pesano
             # pochissimo sul conteggio delle coppie. Su it.wikipedia, min_freq=5
@@ -99,7 +113,7 @@ class BPETokenizer:
             for chunk, ids in seqs.items():
                 if len(ids) > 1:
                     seqs[chunk] = merge(ids, best, new_id)
-        return cls(merges)
+        return cls(merges, pattern)
 
     def _encode_chunk(self, chunk: str) -> list[int]:
         if chunk not in self._cache:
@@ -115,7 +129,7 @@ class BPETokenizer:
         return self._cache[chunk]
 
     def encode(self, s: str) -> list[int]:
-        return [i for chunk in self.PAT.findall(s) for i in self._encode_chunk(chunk)]
+        return [i for chunk in self.pat.findall(s) for i in self._encode_chunk(chunk)]
 
     def decode(self, ids: list[int]) -> str:
         # errors="replace": generando, il modello puo' fermarsi a meta' di un
@@ -123,11 +137,14 @@ class BPETokenizer:
         return b"".join(self.itob[i] for i in ids).decode("utf-8", errors="replace")
 
     def save(self, path: str | Path) -> None:
-        Path(path).write_text(json.dumps(self.merges))
+        Path(path).write_text(json.dumps({"pattern": self.pattern, "merges": self.merges}))
 
     @classmethod
     def load(cls, path: str | Path) -> "BPETokenizer":
-        return cls(json.loads(Path(path).read_text()))
+        d = json.loads(Path(path).read_text())
+        if isinstance(d, list):  # formato vecchio: solo le merge, regex legacy
+            return cls(d)
+        return cls(d["merges"], d["pattern"])
 
 
 def encode_to_bin(

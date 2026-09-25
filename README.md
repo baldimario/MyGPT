@@ -32,22 +32,17 @@ uv run scratch/extract_wikimeia.py
 ---
 
 ```
-uv run src/mygpt/generate.py --prompt "Il processore Pentium 4" --tokens 120 --temperature 0.6 --seed 13 --top
--k 95 --top-p 1.0 --repetition-penalty 1.2
-# out/ckpt.pt: iter 19500, val loss 3.1310
+uv run src/mygpt/generate.py --prompt "Il processore Pentium 4" --tokens 120 --temperature 0.6 --seed 31337 
+--top-k 95 --top-p 1.0 --repetition-penalty 1.2
+# out/ckpt.pt: iter 60000, val loss 2.6099
 # temp 0.6 | top-k 95 | top-p 1.0 | rep 1.2
-# 120 token in 0.42s = 283 tok/s (kv cache, batch 1)
+# 120 token in 0.99s = 121 tok/s (kv cache, batch 1)
 ============================================================
-Il processore Pentium 4 è stato progettato per essere utilizzato in sistemi basati sui canali di rendering e i dati delle versioni precedenti.
+Il processore Pentium 4 fu sostituito da un nuovo coprocessore a 64 bit GPU, il sistema operativo RISC 3.0.
 
-Le versioni successive furono prodotte nel mercato dei computer, con le versioni del Macintosh, mentre una versione più costosa fu la Sony XP, fondata dalla società Automatic Computing Company. L'azienda ha iniziato a produrre il sistema operativo Intel, che introduceva un nuovo sistema operativo. Il G4MP venne commercializzato sul mercato dapprima come "DOS" o "DSM", ma successivamente anche
+La nuova architettura era molto simile al predecessore: 1ª versione (LX) e 2ª versione (MS) erano basati sullo stesso core Camden, ma con prestazioni superiori rispetto al precedente modello. I cofani erano stati ridisegnati per funzionare in modo indipendente, ed adottavano la tecnologia ABM o ARM di seconda generazione, che permetteva una migliore combustione della batteria
 ```
 
 ### next improvements
 
-
-1. RMSNorm
-2. SwiGLU
-3. MoE con n_expert e top_k parametrizzati, aux loss e conteggio dei token per esperto nei log
-4. Dataset: tutti gli shard, memmap uint16
-5. Modello più grande, dimensionato sui token che abbiamo
+gguf to run on llama.cpp

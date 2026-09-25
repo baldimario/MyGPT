@@ -55,3 +55,34 @@ La versione per Macintosh del Pentium 4 MIPS fu realizzata nel 1969. Fu l'ultima
 L'italiano è fludio e il registro enciclopedico è giusto, il lessico è quello del dominio (architettura, bit, Macintosh, Windows), ma i fatti sono inventati "MIPS", 1969, 54 bit, a 21M paraemtri attivi il modello ha imparato la forma della conoscenza, non ancora la conoscenza
 
 Il prossimo passo sarebbe il modello più grande, eper esempio 512/8/8 con 8 esperti, circa 150M parametri totali e 30M attivi
+
+Post training
+
+il MoE ingrandito 512/8/8 è il miglior modelli finojra, bpb 1.027
+
+| modello | dati | step | val | bpb | tempo |
+| denso LayerNorm + Gelu 384/6/6 | 1 shard | 20k | 3.1310 | 1.232 | 40 min |
+| MoE 8 esperti top-2, 384/6/6 | 10 shard | 60k | 2.7562 | 1.085 | 1.085 | 1h50 |
+| MoE 8 esperti top-2, 512/8/8 | 10 shard | 60k | 2.6099 | 1.027 | 4h15 |
+
+Analizziamo la curva
+
+rispetto al 384/6/6 sono -0.146 nat, cioè -5.3% di bpb, con lo stesso numero di step e gli stessi dati, il vantaggio è cresciuto fino allo step 20k e poi si è stabilizzato tra -0.15 e -0.17, più parametri attivi, da 21M a 47M rendono in modo costante
+
+
+gli ultimi 6k step sono piatti, 1.028 poi 1.027 poi 1.027, a fine cosine il modello ha dato quello che poteva con questo schedule e questi dati
+
+il gap tra train e val è 0.29 un po' più alto del piccolo (0.25), coerente con più capacità e con i ltrain più facile della val, ma non è overfitting perché la val è scesa fino alla fine
+
+gli esperti, nessun collaso però si sono specializzati molto, nel layer 4 l'esperto 4 è sceso a 0.39x del carico uniforme, nel layer 7 l'esperto 7 prende 2.11x, magari la prossima run proviamo aux_coef 0.02
+
+proviamo un prompot campione con temperatura 0.7, top-k 40, repetition poenality 1.15
+
+```
+Il processore Pentium 4 (o "Pentium Explorer") è stato una famiglia di processori Intel che ha esordito in Europa nel 1992 ed era composta da diversi chip, con un'architettura a 64 bit […] Il progetto è stato affidato alla Magnetic Firebirds a Peter Hickock e Keith Bird del gruppo AMD.
+
+Storia
+Le prime versioni della famiglia Pentium D erano state presentate a fine 1993 come versioni potenziate della piattaforma IBM…
+```
+
+Il testo è più coerente e strutturato, ora collega Pentium a Intel, e c'è una vera sezione "Storia". I fatti restano inventati, con altri prompt si vede il limite dei modelli piccoli, tipo "Divina Commedia" è diventato un elenco di voci, "Dante Alighieri" ha aperto subito un nuovo articolo sulla "Kremlin Cup", il modello continua il testo nella forma di Wikipedia ma non segue davvero l'argomento del prompt

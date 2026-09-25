@@ -1,4 +1,5 @@
 import math
+import sys
 import time
 from pathlib import Path
 
@@ -10,17 +11,18 @@ from mygpt.data import BPETokenizer, get_batch
 from mygpt.model import GPT
 
 # config
-n_embd, n_head, n_layer = 384, 6, 6
+n_embd, n_head, n_layer = 512, 8, 8  # 151M totali, ~47M attivi per token con 8x top-2
 block_size = 256
 dropout = 0.0  # con <1 epoca non c'e' niente da memorizzare: sarebbe solo rumore
 n_expert = 8  # 0 = MLP densa
 top_k = 2  # esperti attivi per token
+multiple_of = 256  # hidden degli esperti multiplo di 256: 1536 per C=512, compatibile coi K-quant di llama.cpp
 aux_coef = 0.01  # peso della load balancing loss (Switch)
 
 batch_size = 64
 max_iters = 60000  # ~1B token, ~0.7 epoche dei 1.37B di train
-learning_rate = 1e-3
-min_lr = 1e-4
+learning_rate = 6e-4  # come GPT-3 125M: piu' largo e profondo, meno aggressivo
+min_lr = 6e-5
 warmup_iters = 100
 weight_decay = 0.1
 betas = (0.9, 0.99)
@@ -30,6 +32,8 @@ eval_interval = 2000
 eval_iters = 100  # 13M token di val: 100 batch bastano
 compile_model = True
 out_dir = Path("out")
+# --resume riparte da out/last.pt: pesi, AdamW, step e RNG, come se il run non si fosse mai fermato
+resume = "--resume" in sys.argv
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 torch.manual_seed(1337)
@@ -44,11 +48,13 @@ def sync() -> None:
 
 
 # dati e modello
-tok = BPETokenizer.load("data/bpe-it.json")
+# regex GPT-2 (= llama.cpp "gpt-2"): il GGUF tokenizza esattamente come in training
+tokenizer_path = "data/bpe-it-gpt2.json"
+tok = BPETokenizer.load(tokenizer_path)
 # memmap uint16: 2.3B token sono 4.6 GB su disco, in int64 in VRAM sarebbero 18 GB
 # la val e' l'ultimo 10% di input-it.bin, la stessa di tutti i run precedenti (scratch/build_it_corpus.py)
-train_data = np.memmap("data/it-train.bin", dtype=np.uint16, mode="r")
-val_data = np.memmap("data/it-val.bin", dtype=np.uint16, mode="r")
+train_data = np.memmap("data/it-gpt2-train.bin", dtype=np.uint16, mode="r")
+val_data = np.memmap("data/it-gpt2-val.bin", dtype=np.uint16, mode="r")
 print(f"train {len(train_data):,} token | val {len(val_data):,} token")
 # bit/byte: l'unica metrica confrontabile tra tokenizzatori diversi, perche'
 # normalizza la loss per quanto testo vero sta dentro un token
@@ -57,7 +63,16 @@ bytes_per_token = len(tok.decode(_probe).encode()) / len(_probe)
 print(f"vocab {tok.vocab_size} | {bytes_per_token:.2f} byte/token sulla val")
 
 raw_model = GPT(
-    tok.vocab_size, n_embd, n_head, n_layer, block_size, dropout, n_expert, top_k, aux_coef
+    tok.vocab_size,
+    n_embd,
+    n_head,
+    n_layer,
+    block_size,
+    dropout,
+    n_expert,
+    top_k,
+    aux_coef,
+    multiple_of,
 ).to(device)
 print(f"{sum(p.numel() for p in raw_model.parameters()):,} parametri")
 
@@ -77,6 +92,16 @@ optimizer = torch.optim.AdamW(
     lr=learning_rate,
     betas=betas,
 )
+
+start_it, best_val = 0, float("inf")
+if resume:
+    ck = torch.load(out_dir / "last.pt", map_location=device, weights_only=False)
+    raw_model.load_state_dict(ck["model"])
+    optimizer.load_state_dict(ck["optimizer"])  # senza i momenti di Adam la ripartenza non e' la stessa
+    torch.set_rng_state(ck["rng_cpu"].cpu())  # get_batch pesca gli indici dal RNG CPU
+    torch.cuda.set_rng_state(ck["rng_cuda"].cpu())
+    start_it, best_val = ck["iter"], ck["best_val"]
+    print(f"ripreso da {out_dir / 'last.pt'} allo step {start_it}, best val {best_val:.4f}")
 
 model = torch.compile(raw_model) if compile_model else raw_model
 
@@ -109,15 +134,15 @@ def estimate_loss() -> dict[str, float]:
 
 
 # learning loop
-best_val = float("inf")
-t_last, it_last = time.time(), 0
+t_last, it_last = time.time(), start_it
 
-for it in range(max_iters + 1):
+for it in range(start_it, max_iters + 1):
     lr = get_lr(it)
     for group in optimizer.param_groups:
         group["lr"] = lr
 
-    if it % eval_interval == 0:
+    # riprendendo, l'eval di start_it e' gia' stato fatto (e ha gia' consumato il RNG) prima del salvataggio
+    if it % eval_interval == 0 and not (resume and it == start_it):
         sync()
         elapsed = time.time() - t_last
         n_it = it - it_last
@@ -150,12 +175,28 @@ for it in range(max_iters + 1):
                         block_size=block_size,
                         n_expert=n_expert,
                         top_k=top_k,
+                        multiple_of=multiple_of,
                     ),
                     "iter": it,
                     "val_loss": best_val,
+                    "tokenizer": tokenizer_path,  # gli id del modello hanno senso solo con questo tokenizer
                 },
                 out_dir / "ckpt.pt",
             )
+        if it > start_it:
+            # stato completo per --resume, sovrascritto a ogni eval: se il run muore si perde al massimo un eval_interval
+            torch.save(
+                {
+                    "model": raw_model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "iter": it,
+                    "best_val": best_val,
+                    "rng_cpu": torch.get_rng_state(),
+                    "rng_cuda": torch.cuda.get_rng_state(),
+                },
+                out_dir / "last.pt.tmp",
+            )
+            (out_dir / "last.pt.tmp").replace(out_dir / "last.pt")  # atomico: un crash a meta' non rovina l'ultimo buono
         t_last, it_last = time.time(), it  # l'eval non conta nel tempo/iter
 
     x, y = get_batch(train_data, batch_size, block_size, device)

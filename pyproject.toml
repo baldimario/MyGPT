@@ -11,6 +11,7 @@ dependencies = [
     "torch>=2.13.0",
     "numpy>=2.0",
     "pyarrow>=25.0.1",
+    "regex>=2026.9.10",
 ]
 
 [project.scripts]
