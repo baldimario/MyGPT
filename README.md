@@ -55,3 +55,42 @@ quantize using llama-quantize
 ~/llm/llama.cpp/build/bin/llama-quantize out/mygpt-moe-f32.gguf out/mygpt-moe-Q8_0.gguf Q8_0
 ~/llm/llama.cpp/build/bin/llama-quantize out/mygpt-moe-f32.gguf out/mygpt-moe-Q4_K_M.gguf Q4_K_M
 ```
+
+## SFT
+
+```
+$ MAX_TOKENS=100 ./chat.sh
+
+Loading model...  
+
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b9512-0dbfa66a1
+model      : mygpt-chat-Q8_0.gguf
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+> chi è il regista del signore degli anelli?
+
+Il protagonista è Gandalf.
+
+Prima dell'inizio dei titoli, Gandalf aveva già scritto un libro intitolato "Storie dell'Artiglieria", ma aveva subito solo qualche modifica per adattarlo alle sue esigenze e qualità. 
+
+Durante la sua prima pubblicazione, nel 600 a.C., Gandalf si trovò di fronte ad alcune sfide: la distruzione del suo castello, l'uso di enigmi e la perdita
+
+[ Prompt: 262.9 t/s | Generation: 405.0 t/s ]
+```
