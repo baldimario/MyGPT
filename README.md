@@ -43,6 +43,15 @@ Il processore Pentium 4 fu sostituito da un nuovo coprocessore a 64 bit GPU, il 
 La nuova architettura era molto simile al predecessore: 1ª versione (LX) e 2ª versione (MS) erano basati sullo stesso core Camden, ma con prestazioni superiori rispetto al precedente modello. I cofani erano stati ridisegnati per funzionare in modo indipendente, ed adottavano la tecnologia ABM o ARM di seconda generazione, che permetteva una migliore combustione della batteria
 ```
 
-### next improvements
+## GGUF conversion
 
-gguf to run on llama.cpp
+```
+uv run --with gguf scratch/export_gguf.py out/ckpt.pt out/mygpt-moe-f32.gguf
+```
+
+quantize using llama-quantize
+
+```
+~/llm/llama.cpp/build/bin/llama-quantize out/mygpt-moe-f32.gguf out/mygpt-moe-Q8_0.gguf Q8_0
+~/llm/llama.cpp/build/bin/llama-quantize out/mygpt-moe-f32.gguf out/mygpt-moe-Q4_K_M.gguf Q4_K_M
+```

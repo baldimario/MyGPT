@@ -62,7 +62,12 @@ class BPETokenizer:
     # fa lo stesso tenendo come pezzo a se' il testo che nessuna alternativa prende
     GPT2_PAT = r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
 
-    def __init__(self, merges: list[tuple[int, int]], pattern: str = LEGACY_PAT) -> None:
+    def __init__(
+        self,
+        merges: list[tuple[int, int]],
+        pattern: str = LEGACY_PAT,
+        specials: list[str] = (),
+    ) -> None:
         self.pattern = pattern
         # la legacy resta su re: il \w di regex non e' identico a quello di re, e cambierebbe gli id dei vecchi .bin
         self.pat = re.compile(pattern) if pattern == self.LEGACY_PAT else regex.compile(pattern)
@@ -72,6 +77,13 @@ class BPETokenizer:
         self.itob = [bytes([i]) for i in range(256)]  # id -> byte rappresentati
         for a, b in self.merges:
             self.itob.append(self.itob[a] + self.itob[b])
+        # token speciali (es. <|end|>) in coda al vocabolario: encode() non li produce MAI, nessuna merge porta a loro,
+        # quindi un "<|end|>" scritto dentro un testo resta testo. Si inseriscono solo per id, con special_id[nome]
+        self.specials = list(specials)
+        self.special_id = {}
+        for name in self.specials:
+            self.special_id[name] = len(self.itob)
+            self.itob.append(name.encode())
         self._cache: dict[str, list[int]] = {}
 
     @property
@@ -137,14 +149,17 @@ class BPETokenizer:
         return b"".join(self.itob[i] for i in ids).decode("utf-8", errors="replace")
 
     def save(self, path: str | Path) -> None:
-        Path(path).write_text(json.dumps({"pattern": self.pattern, "merges": self.merges}))
+        d = {"pattern": self.pattern, "merges": self.merges}
+        if self.specials:
+            d["specials"] = self.specials
+        Path(path).write_text(json.dumps(d))
 
     @classmethod
     def load(cls, path: str | Path) -> "BPETokenizer":
         d = json.loads(Path(path).read_text())
         if isinstance(d, list):  # formato vecchio: solo le merge, regex legacy
             return cls(d)
-        return cls(d["merges"], d["pattern"])
+        return cls(d["merges"], d["pattern"], d.get("specials", []))
 
 
 def encode_to_bin(
@@ -185,6 +200,21 @@ def load_data(
 def _split(data: torch.Tensor, val_frac: float) -> tuple[torch.Tensor, torch.Tensor]:
     n = int(len(data) * (1 - val_frac))
     return data[:n], data[n:]
+
+
+def get_rows(
+    data: np.ndarray, mask: np.ndarray, batch_size: int, device: str = "cuda"
+) -> tuple[torch.Tensor, torch.Tensor]:
+    # sft: righe gia' impacchettate (N, T+1). Target = riga spostata di uno; dove mask e' 0 (domande dell'utente,
+    # padding) il target diventa -100, che F.cross_entropy ignora: la loss e' solo sulle risposte dell'assistente
+    ix = torch.randint(len(data), (batch_size,)).numpy()
+    rows = torch.from_numpy(data[ix].astype(np.int64))
+    keep = torch.from_numpy(mask[ix][:, 1:].astype(bool))
+    x, y = rows[:, :-1], rows[:, 1:].masked_fill(~keep, -100)
+    return (
+        x.contiguous().pin_memory().to(device, non_blocking=True),
+        y.contiguous().pin_memory().to(device, non_blocking=True),
+    )
 
 
 def get_batch(

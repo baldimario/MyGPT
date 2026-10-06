@@ -110,3 +110,96 @@ Q4_K_M è la scelta migliore, perde meno della metà di Q4_0 in cambio di 14MB i
 Visto che riaddestriamo possiamo settare la costante multiple_of=256 in SwiGLU così portiamo 1408 a multiplo di 256 che per C=512 da 1536 (arrotondando per eccesso come fa LLaMA), però richiede retrain perché cambia la forma dei pesi degli esperti, i parametir crescono del 9% (da 151M a 165M) il calcolo degli esperti cresce della stessa misura, il guadagno sui k-want è piccolo, solo ffn_down passerebbe da q5_0 a q4_K e il file resterebbe intorno ai 100MB per via dei parametri in più, da solo no vale la pena però siccome dobbiamo riaddestrare il pre-tokenizer con la regex di GPT-2 sì
 
 
+convertiamo i tensori pytorch nel checkpoint nel formato GGUF
+
+```
+uv run --with gguf scratch/export_gguf.py out/ckpt.pt out/mygpt-moe-f32.gguf
+```
+
+quantizziamo usando llama-quantize
+
+```
+~/llm/llama.cpp/build/bin/llama-quantize out/mygpt-moe-f32.gguf out/mygpt-moe-Q8_0.gguf Q8_0
+~/llm/llama.cpp/build/bin/llama-quantize out/mygpt-moe-f32.gguf out/mygpt-moe-Q4_K_M.gguf Q4_K_M
+```
+
+run
+
+```
+~/llm/llama.cpp/build/bin/llama-completion \
+  -m out/mygpt-gpt2-Q4_K_M.gguf \
+  -p "Il processore Pentium 4" \
+  -n 200 --temp 0.7 --top-k 40 --repeat-penalty 1.15 \
+  -no-cnv
+```
+
+```
+~/llm/llama.cpp/build/bin/llama-completion \
+  -m out/mygpt-gpt2-Q4_K_M.gguf \
+  -p "Il processore Pentium 4" \
+  -n 200 --temp 0.7 --top-k 40 --repeat-penalty 1.15 \
+  -no-cnv
+0.00.101.198 I llama_completion: llama backend init
+0.00.101.206 I llama_completion: load the model and apply lora adapter, if any
+0.00.101.219 I common_init_result: fitting params to device memory ...
+0.00.101.219 I common_init_result: (for bugs during this step try to reproduce them 
+with -fit off, or provide --verbose logs if the bug only occurs with -fit on)
+0.00.206.918 W load: special_eos_id is not in special_eog_ids - the tokenizer config
+ may be incorrect
+0.00.221.307 I common_init_from_params: warming up the model with an empty run - ple
+ase wait ... (--no-warmup to disable)
+0.00.244.386 I llama_completion: llama threadpool init, n_threads = 8
+0.00.244.401 I 
+0.00.244.438 I system_info: n_threads = 8 (n_threads_batch = 8) / 32 | CUDA : ARCHS 
+= 1200 | USE_GRAPHS = 1 | PEER_MAX_BATCH_SIZE = 128 | BLACKWELL_NATIVE_FP4 = 1 | CPU
+ : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX_VNNI = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | B
+MI2 = 1 | LLAMAFILE = 1 | OPENMP = 1 | REPACK = 1 | 
+0.00.244.438 I 
+0.00.244.502 I sampler seed: 1457970904
+0.00.244.508 I sampler params: 
+        repeat_last_n = 64, repeat_penalty = 1.150, frequency_penalty = 0.000, prese
+nce_penalty = 0.000
+        dry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalt
+y_last_n = -1
+        top_k = 40, top_p = 0.950, min_p = 0.050, xtc_probability = 0.000, xtc_thres
+hold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.700
+        mirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000, adaptive_target = -
+1.000, adaptive_decay = 0.900
+0.00.244.515 I sampler chain: logits -> penalties -> ?dry -> ?top-n-sigma -> top-k -
+> ?typical -> top-p -> min-p -> ?xtc -> temp-ext -> dist 
+0.00.244.516 I generate: n_ctx = 256, n_batch = 2048, n_predict = 200, n_keep = 0
+0.00.244.516 I 
+Il processore Pentium 4 è dotato di uno o due coprocessori Intel Itanium, che sono in grado di sviluppare fino a 512 MHz.
+
+Questo processore presenta una memoria interna da 1 GB a 2,5 GB e la possibilità di avere un'interfaccia grafica a 64 bit, con una risoluzione massima di 32x26 pixel (226 x 120 pixel). La memoria interna è inoltre in grado di riprodurre l'aspetto del processore tramite un microprocessore Intel Itanium 4.
+
+Struttura e implementazione 
+La scheda madre per le istruzioni da 16 KB a 32 bit (standard per la compatibilità con il sistema operativo) viene scelta per essere usata come una sorta di riga di comando, ovvero un processore che esegue le operazioni di caricamento ed installazione delle istruzioni. Il processore è dotato di 64 KB di memoria interna (
+
+0.00.397.389 I common_perf_print:    sampling time =       7.93 ms
+0.00.397.389 I common_perf_print:    samplers time =       6.79 ms /   207 tokens
+0.00.397.392 I common_perf_print:        load time =      39.66 ms
+0.00.397.393 I common_perf_print: prompt eval time =      41.74 ms /     7 tokens (    5.96 ms per token,   167.71 tokens per second)
+0.00.397.394 I common_perf_print:        eval time =     102.65 ms /   199 runs   (    0.52 ms per token,  1938.55 tokens per second)
+0.00.397.394 I common_perf_print:       total time =     153.01 ms /   206 tokens
+0.00.397.394 I common_perf_print: unaccounted time =       0.68 ms /   0.4 %      (total - sampling - prompt eval - eval) / (total)
+```
+
+Chiaramente il modello ha imparato l'italiano, frasi lunghe gramamticalmente corrette, concordanze e subordinate giuste ("che sono in grado di sviluppare", "viene scelta per essere usata come")
+
+Ha imparato il registro di Wikipedia, tono enciclopedico e una sezione ("Struttura e implementazione") che in un articolo su una CPU ci sta
+
+Il campo semantico: Itanium, MHz, GB, KB, 64 bit, scheda madre, istruzioni, resta nell'argomento dall'inizio alla fine senza deragliare su comuni francesi, film, storia
+
+La cosa pi+ interessante è che associa le unitù di misura giuste alle grandezze giuste, MHz per una frequenza, GB e KB per la memoria, pixel per la risoluzione, bit pe rl'ampiezza di un'interfaccia, è conmoscenza di tipo ("una frequenza si misura in MHz"), non di istanza ("il Pentium 4 andava a 1..3-3.8 GHz")
+
+Cosa manca in effetti?
+
+Tutti i fatti sono sbagliati, il Pentium 4 no ha coprocessori Itanium, andava a GHz e non a 512 MHz, non ha memoria interna di 1 GB
+
+Il senso delle frasi, oltre che l aloro forma, "32x26 pixel (226 x 120 pixel)" e "riprodurre l'aspetto del processore" sono corretti sintatticamente ma non significano niente, La coerenza è locale, ogni frase è plausibile preso il pezzo precedente ma non c'è un modello nel mondo che la tenga assieme
+
+Come interpretiamo questa cosa? è esattamente quello che prevede il conto di circa 2 bit pe rparametro, I pesi bastano per la struttura delal lingua e per gli schemi ("un processore ha frequenza, cache, bit") non per i valori specifici di 1.8M articoli, per sensazione somiglia a GPT-2 small, il testo è fluido e sembra parlare di qualcosa mai contenuti sono inventati, è un buon punto di partenza perché la parte difficile da ottenere coi pesi è la lingua, la forma e gli schemi e quelli ci sono, quello che manca è proprio ciò che il retrieval fornisce, i valori
+
+
+

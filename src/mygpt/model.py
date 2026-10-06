@@ -317,7 +317,8 @@ class GPT(nn.Module):
         if targets is None:
             return logits, None
 
-        loss = F.cross_entropy(logits.view(B * T, -1), targets.view(B * T))
+        # ignore_index=-100 (il default, scritto per chiarezza): in sft le posizioni dell'utente non contano
+        loss = F.cross_entropy(logits.view(B * T, -1), targets.view(B * T), ignore_index=-100)
         # la aux loss solo in training: in eval la loss resta cross entropy pura, confrontabile col denso e in bpb
         moes = [b.mlp for b in self.blocks if isinstance(b.mlp, MoE)]
         if moes and self.training:
@@ -341,6 +342,7 @@ class GPT(nn.Module):
         top_p: float | None = None,
         repetition_penalty: float = 1.0,
         use_cache: bool = True,
+        stop_token: int | None = None,
     ) -> torch.Tensor:
         self.set_cache(use_cache)
         for i in range(max_new_tokens):
@@ -391,6 +393,8 @@ class GPT(nn.Module):
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
+            if stop_token is not None and (idx_next == stop_token).all():
+                break  # in chat: <|end|> chiude il turno dell'assistente
         self.set_cache(False)  # il modello torna stateless, la memoria si libera
         return idx
 

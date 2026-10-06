@@ -18,6 +18,7 @@ parser.add_argument("--repetition-penalty", type=float, default=1.15)  # misurat
 parser.add_argument("--samples", type=int, default=1)
 parser.add_argument("--no-cache", action="store_true", help="disattiva la KV cache")
 parser.add_argument("--seed", type=int, default=None)
+parser.add_argument("--chat", action="store_true", help="modello SFT: usa il chat template e si ferma su <|end|>")
 args = parser.parse_args()
 
 assert args.prompt, "il prompt non puo' essere vuoto: serve almeno un token di contesto"
@@ -37,6 +38,34 @@ model.load_state_dict(ckpt["model"])
 model.eval()
 
 print(f"# {args.ckpt}: iter {ckpt['iter']}, val loss {ckpt['val_loss']:.4f}")
+
+if args.chat:
+    # stesso formato dell'SFT: <|user|> domanda <|end|> <|assistant|> ... finche' il modello non scrive <|end|>.
+    # La storia resta nel contesto, quindi la conversazione e' multi-turno (oltre block_size scorre la finestra)
+    U, A, E = (tok.special_id[s] for s in ("<|user|>", "<|assistant|>", "<|end|>"))
+    single = args.prompt != "\n"  # con --prompt: una domanda e via, senza: chat interattiva
+    history: list[int] = []
+    while True:
+        try:
+            user = args.prompt if single else input("tu> ")
+        except (EOFError, KeyboardInterrupt):
+            break
+        history += [U] + tok.encode(user) + [E, A]
+        out = model.generate(
+            torch.tensor([history], device=device),
+            args.tokens,
+            temperature=args.temperature,
+            top_k=args.top_k or None,
+            top_p=args.top_p,
+            repetition_penalty=args.repetition_penalty,
+            stop_token=E,
+        )
+        reply = out[0, len(history) :].tolist()
+        history += reply if reply[-1] == E else reply + [E]  # risposta troncata da --tokens: si chiude a mano
+        print(("" if single else "mygpt> ") + tok.decode([t for t in reply if t != E]))
+        if single:
+            break
+    raise SystemExit
 
 ids = tok.encode(args.prompt)  # byte-level: nessun prompt e' fuori vocabolario
 

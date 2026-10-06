@@ -19,3 +19,5 @@ data/it-*
 out/**/*.pt
 out/*.gguf
 out/*.log
+
+data/sft-*

@@ -43,7 +43,8 @@ def bytes_to_unicode() -> dict[int, str]:
 
 
 b2u = bytes_to_unicode()
-tokens = ["".join(b2u[b] for b in t) for t in tok.itob]
+# i token speciali restano scritti per esteso ("<|end|>"): sono CONTROL, llama.cpp non li tratta come byte
+tokens = ["".join(b2u[b] for b in t) for t in tok.itob[: V - len(tok.specials)]] + tok.specials
 merges = [f"{tokens[a]} {tokens[b]}" for a, b in tok.merges]
 
 w = gguf.GGUFWriter(out_path, "llama")
@@ -68,9 +69,19 @@ if tok.pattern != BPETokenizer.GPT2_PAT:
 w.add_tokenizer_model("gpt2")
 w.add_tokenizer_pre("gpt-2")  # il nome che llama.cpp mappa su LLAMA_VOCAB_PRE_TYPE_GPT2
 w.add_token_list(tokens)
-w.add_token_types([gguf.TokenType.NORMAL] * V)
+w.add_token_types([gguf.TokenType.NORMAL] * (V - len(tok.specials)) + [gguf.TokenType.CONTROL] * len(tok.specials))
 w.add_token_merges(merges)
 w.add_add_bos_token(False)
+if tok.specials:
+    # modello SFT: <|end|> chiude il turno, e il template dice a llama.cpp come scrivere la conversazione
+    w.add_eos_token_id(tok.special_id["<|end|>"])
+    w.add_chat_template(
+        "{% for m in messages %}"
+        "{% if m['role'] == 'user' %}<|user|>{{ m['content'] }}<|end|>"
+        "{% elif m['role'] == 'assistant' %}<|assistant|>{{ m['content'] }}<|end|>{% endif %}"
+        "{% endfor %}"
+        "{% if add_generation_prompt %}<|assistant|>{% endif %}"
+    )
 
 # lm_head e' legata a wte: llama.cpp senza output.weight riusa token_embd
 w.add_tensor("token_embd.weight", np32(sd["wte.weight"]))

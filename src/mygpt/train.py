@@ -7,7 +7,7 @@ import torch
 
 import numpy as np
 
-from mygpt.data import BPETokenizer, get_batch
+from mygpt.data import BPETokenizer, get_batch, get_rows
 from mygpt.model import GPT
 
 # config
@@ -32,7 +32,22 @@ eval_interval = 2000
 eval_iters = 100  # 13M token di val: 100 batch bastano
 compile_model = True
 out_dir = Path("out")
-# --resume riparte da out/last.pt: pesi, AdamW, step e RNG, come se il run non si fosse mai fermato
+# regex GPT-2 (= llama.cpp "gpt-2"): il GGUF tokenizza esattamente come in training
+tokenizer_path = "data/bpe-it-gpt2.json"
+# memmap uint16: 1.4B token sono 2.8 GB su disco, in int64 in VRAM sarebbero 11 GB
+# la val e' l'ultimo 10% di input-it.bin, la stessa di tutti i run precedenti (scratch/build_it_corpus.py)
+train_bin, val_bin = "data/it-gpt2-train.bin", "data/it-gpt2-val.bin"
+# sft: i .bin sono righe di block_size+1 token gia' impacchettate (scratch/build_sft.py), con accanto un .mask.bin
+# che dice quali token sono da predire (le risposte dell'assistente)
+sft = False
+init_from = None  # checkpoint di partenza (solo i pesi, ottimizzatore e schedule ripartono da zero)
+
+# config da file, come nanoGPT: uv run src/mygpt/train.py config/sft.py  -> sovrascrive le variabili qui sopra
+for arg in sys.argv[1:]:
+    if arg.endswith(".py"):
+        print(f"config da {arg}:\n{Path(arg).read_text()}")
+        exec(Path(arg).read_text())
+# --resume riparte da out_dir/last.pt: pesi, AdamW, step e RNG, come se il run non si fosse mai fermato
 resume = "--resume" in sys.argv
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -48,19 +63,31 @@ def sync() -> None:
 
 
 # dati e modello
-# regex GPT-2 (= llama.cpp "gpt-2"): il GGUF tokenizza esattamente come in training
-tokenizer_path = "data/bpe-it-gpt2.json"
 tok = BPETokenizer.load(tokenizer_path)
-# memmap uint16: 2.3B token sono 4.6 GB su disco, in int64 in VRAM sarebbero 18 GB
-# la val e' l'ultimo 10% di input-it.bin, la stessa di tutti i run precedenti (scratch/build_it_corpus.py)
-train_data = np.memmap("data/it-gpt2-train.bin", dtype=np.uint16, mode="r")
-val_data = np.memmap("data/it-gpt2-val.bin", dtype=np.uint16, mode="r")
-print(f"train {len(train_data):,} token | val {len(val_data):,} token")
-# bit/byte: l'unica metrica confrontabile tra tokenizzatori diversi, perche'
-# normalizza la loss per quanto testo vero sta dentro un token
-_probe = val_data[:200_000].tolist()
-bytes_per_token = len(tok.decode(_probe).encode()) / len(_probe)
-print(f"vocab {tok.vocab_size} | {bytes_per_token:.2f} byte/token sulla val")
+train_data = np.memmap(train_bin, dtype=np.uint16, mode="r")
+val_data = np.memmap(val_bin, dtype=np.uint16, mode="r")
+if sft:
+    train_data, val_data = (d.reshape(-1, block_size + 1) for d in (train_data, val_data))
+    train_mask, val_mask = (
+        np.memmap(b.replace(".bin", ".mask.bin"), dtype=np.uint8, mode="r").reshape(-1, block_size + 1)
+        for b in (train_bin, val_bin)
+    )
+    print(f"sft: train {len(train_data):,} righe | val {len(val_data):,} righe da {block_size + 1}")
+else:
+    print(f"train {len(train_data):,} token | val {len(val_data):,} token")
+    # bit/byte: l'unica metrica confrontabile tra tokenizzatori diversi, perche'
+    # normalizza la loss per quanto testo vero sta dentro un token
+    _probe = val_data[:200_000].tolist()
+    bytes_per_token = len(tok.decode(_probe).encode()) / len(_probe)
+    print(f"vocab {tok.vocab_size} | {bytes_per_token:.2f} byte/token sulla val")
+
+
+def batch(split: str) -> tuple[torch.Tensor, torch.Tensor]:
+    if sft:
+        data, mask = (train_data, train_mask) if split == "train" else (val_data, val_mask)
+        return get_rows(data, mask, batch_size, device)
+    return get_batch(train_data if split == "train" else val_data, batch_size, block_size, device)
+
 
 raw_model = GPT(
     tok.vocab_size,
@@ -75,6 +102,10 @@ raw_model = GPT(
     multiple_of,
 ).to(device)
 print(f"{sum(p.numel() for p in raw_model.parameters()):,} parametri")
+if init_from and not resume:
+    # strict: config e vocabolario devono combaciare col checkpoint (block_size no: la RoPE non ha parametri)
+    raw_model.load_state_dict(torch.load(init_from, map_location=device, weights_only=True)["model"])
+    print(f"pesi iniziali da {init_from}")
 
 # weight decay solo sui tensori 2D+ (le matrici dei matmul), non su bias e LayerNorm
 decay = [p for p in raw_model.parameters() if p.dim() >= 2]
@@ -91,6 +122,7 @@ optimizer = torch.optim.AdamW(
     ],
     lr=learning_rate,
     betas=betas,
+    fused=device == "cuda",  # un kernel solo per tutto l'update: -3% di tempo per step, misurato
 )
 
 start_it, best_val = 0, float("inf")
@@ -121,10 +153,10 @@ def get_lr(it: int) -> float:
 def estimate_loss() -> dict[str, float]:
     model.eval()
     out = {}
-    for name, data in (("train", train_data), ("val", val_data)):
+    for name in ("train", "val"):
         losses = torch.zeros(eval_iters, device=device)
         for k in range(eval_iters):
-            x, y = get_batch(data, batch_size, block_size, device)
+            x, y = batch(name)
             with torch.autocast(device_type=device, dtype=torch.bfloat16):
                 _, loss = model(x, y)
             losses[k] = loss
@@ -150,10 +182,11 @@ for it in range(start_it, max_iters + 1):
         tok_s = batch_size * block_size * n_it / elapsed if n_it else 0.0
 
         losses = estimate_loss()
-        bpb = losses["val"] / (math.log(2) * bytes_per_token)
+        # in sft la loss e' solo sui token dell'assistente: il bpb non e' confrontabile, non lo si stampa
+        bpb = "" if sft else f"| bpb {losses['val'] / (math.log(2) * bytes_per_token):.3f} "
         print(
             f"step {it:5d} | train {losses['train']:.4f} | val {losses['val']:.4f} "
-            f"| bpb {bpb:.3f} | lr {lr:.2e} | {ms:6.1f} ms/it | {tok_s / 1e3:5.0f}k tok/s"
+            f"{bpb}| lr {lr:.2e} | {ms:6.1f} ms/it | {tok_s / 1e3:5.0f}k tok/s"
         )
         if n_expert:
             # carico per esperto rispetto all'uniforme (1.00 = 1/n_expert dei token), per layer
@@ -163,7 +196,7 @@ for it in range(start_it, max_iters + 1):
 
         if losses["val"] < best_val and it > 0:
             best_val = losses["val"]
-            out_dir.mkdir(exist_ok=True)
+            out_dir.mkdir(parents=True, exist_ok=True)
             torch.save(
                 {
                     "model": raw_model.state_dict(),
@@ -199,7 +232,7 @@ for it in range(start_it, max_iters + 1):
             (out_dir / "last.pt.tmp").replace(out_dir / "last.pt")  # atomico: un crash a meta' non rovina l'ultimo buono
         t_last, it_last = time.time(), it  # l'eval non conta nel tempo/iter
 
-    x, y = get_batch(train_data, batch_size, block_size, device)
+    x, y = batch("train")
     with torch.autocast(device_type=device, dtype=torch.bfloat16):
         _, loss = model(x, y)
 
@@ -212,6 +245,13 @@ print(f"\nmiglior val loss: {best_val:.4f}  ->  {out_dir / 'ckpt.pt'}")
 
 # sampling
 raw_model.eval()
-ctx = torch.tensor([tok.encode("\n")], dtype=torch.long, device=device)
+if sft:
+    sp = tok.special_id
+    prompt = [sp["<|user|>"]] + tok.encode("Ciao! Mi spieghi in breve cos'è la fotosintesi?") + [sp["<|end|>"], sp["<|assistant|>"]]
+    stop = sp["<|end|>"]
+else:
+    prompt, stop = tok.encode("\n"), None
+ctx = torch.tensor([prompt], dtype=torch.long, device=device)
 print("=" * 60)
-print(tok.decode(raw_model.generate(ctx, 1000, temperature=0.8, top_k=40)[0].tolist()))
+out = raw_model.generate(ctx, 500, temperature=0.8, top_k=40, repetition_penalty=1.15, stop_token=stop)
+print(tok.decode(out[0].tolist()))
